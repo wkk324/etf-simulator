@@ -58,7 +58,6 @@ def calculate_etf_dividends(ticker, buy_price, days_held):
     years = max(days_held / 365.0, 0.1)
     return math.floor(buy_price * rate * years)
 
-# 종합소득세율 (간이 계산용)
 def calculate_income_tax(total_income):
     if total_income <= 14000000: return total_income * 0.06
     elif total_income <= 50000000: return 840000 + (total_income - 14000000) * 0.15
@@ -74,7 +73,20 @@ sort_option = st.sidebar.radio("ETF 목록 정렬 방식", ["가나다 이름순
 etf_dict = get_etf_data(sort_option)
 selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택", options=list(etf_dict.keys()))
 ticker = etf_dict[selected_etf_label]
-investment_amount = st.sidebar.number_input("투자금 (원)", value=100000000, step=1000000, format="%d")
+
+# 투자금 옵션 (1억, 3억, 5억, 10억 + 기타 직접 입력)
+investment_option = st.sidebar.radio("투자금 선택", ["1억", "3억", "5억", "10억", "기타"], index=0, horizontal=True)
+
+if investment_option == "1억":
+    investment_amount = 100000000
+elif investment_option == "3억":
+    investment_amount = 300000000
+elif investment_option == "5억":
+    investment_amount = 500000000
+elif investment_option == "10억":
+    investment_amount = 1000000000
+else:
+    investment_amount = st.sidebar.number_input("직접 입력 (원)", value=50000000, step=1000000, format="%d")
 
 st.sidebar.markdown("**차트 형태 선택**")
 chart_type = st.sidebar.radio("차트 종류", ["선 차트 (Line)", "캔들 차트 (Candle)"], index=0, horizontal=True)
@@ -125,21 +137,10 @@ if ticker:
                 hovertemplate="날짜: %{x|%Y-%m-%d}<br>시가: %{open:,.0f}원<br>고가: %{high:,.0f}원<br>저가: %{low:,.0f}원<br>종가: %{close:,.0f}원<extra></extra>"
             )])
 
-        # 레이아웃 설정
         fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date), fillcolor="blue", opacity=0.15, layer="below", line_width=0)
-        fig.update_layout(
-            xaxis=dict(tickformat="%Y-%m-%d", fixedrange=False), 
-            yaxis=dict(tickformat=",d", fixedrange=False), 
-            xaxis_rangeslider_visible=False,
-            hovermode="x unified",
-            dragmode="pan"
-        )
+        fig.update_layout(xaxis=dict(tickformat="%Y-%m-%d", fixedrange=False), yaxis=dict(tickformat=",d", fixedrange=False), xaxis_rangeslider_visible=False, hovermode="x unified", dragmode="pan")
         
-        st.plotly_chart(
-            fig, 
-            use_container_width=True, 
-            config={"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]}
-        )
+        st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
 
         # 계산 결과
         mask = (df_all.index >= pd.Timestamp(start_date)) & (df_all.index <= pd.Timestamp(end_date))
@@ -156,7 +157,6 @@ if ticker:
             col2.metric("매수 시점 주가", f"{buy_price:,.0f} 원")
             col3.metric("최종 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원")
             
-            # 배당 및 세금 계산 상세
             total_dps = calculate_etf_dividends(ticker, buy_price, (end_date - start_date).days)
             total_div_gross = quantity * total_dps
             combined_income = other_income + total_div_gross
@@ -168,7 +168,6 @@ if ticker:
             if combined_income > 20000000:
                 excess_income = combined_income - 20000000
                 est_tax = calculate_income_tax(combined_income)
-                
                 st.error("⚠️ 금융소득종합과세 대상입니다.")
                 st.write(f"- **합산 금융소득:** {combined_income:,.0f} 원")
                 st.write(f"- **종합과세 적용 대상액:** {excess_income:,.0f} 원")

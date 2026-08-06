@@ -79,16 +79,18 @@ if ticker:
             start_date = st.slider("매수 시점", min_value=earliest_date, max_value=max(earliest_date, latest_date - duration), value=max(earliest_date, latest_date - duration))
             end_date = start_date + duration
 
-        # 차트 출력 (선 차트 vs 캔들 차트 정상 분기)
+        # 차트 출력 (선 차트 vs 캔들 차트 분기)
         df_all_reset = df_all.reset_index()
         date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
+        # X축 날짜를 문자열로 변환하여 캔들 차트 깨짐 현상 방지
+        df_all_reset['DateStr'] = pd.to_datetime(df_all_reset[date_col]).dt.strftime('%Y-%m-%d')
 
         if chart_type == "선 차트 (Line)":
             fig = px.line(df_all_reset, x=date_col, y="Close", labels={"Close": "종가", date_col: "날짜"})
             fig.update_traces(hovertemplate="날짜: %{x|%Y-%m-%d}<br>종가: %{y:,.0f}원")
         else:
             fig = go.Figure(data=[go.Candlestick(
-                x=df_all_reset[date_col],
+                x=df_all_reset['DateStr'],
                 open=df_all_reset['Open'],
                 high=df_all_reset['High'],
                 low=df_all_reset['Low'],
@@ -96,6 +98,8 @@ if ticker:
                 increasing_line_color='red',
                 decreasing_line_color='blue'
             )])
+            # 캔들 차트 공백(주말 등) 제거를 위한 타입 설정
+            fig.update_xaxes(type='category')
 
         # 공통 레이아웃 설정
         fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date), fillcolor="blue", opacity=0.15, layer="below", line_width=0)

@@ -48,6 +48,39 @@ def calculate_etf_dividends(ticker, buy_price, days_held):
     years = max(days_held / 365.0, 0.1)
     return math.floor(buy_price * rate * years)
 
+# 년, 월, 일 상세 계산 함수
+def get_formatted_period(start_date, end_date):
+    y1, m1, d1 = start_date.year, start_date.month, start_date.day
+    y2, m2, d2 = end_date.year, end_date.month, end_date.day
+    
+    years = y2 - y1
+    months = m2 - m1
+    days = d2 - d1
+    
+    if days < 0:
+        months -= 1
+        # 이전 달의 마지막 일수 계산
+        prev_month = m2 - 1 if m2 > 1 else 12
+        prev_year = y2 if m2 > 1 else y2 - 1
+        import calendar
+        days += calendar.monthrange(prev_year, prev_month)[1]
+        
+    if months < 0:
+        years -= 1
+        months += 12
+        
+    total_days = (end_date - start_date).days
+    
+    parts = []
+    if years > 0:
+        parts.append(f"{years}년")
+    if months > 0:
+        parts.append(f"{months}개월")
+    if days > 0 or not parts:
+        parts.append(f"{days}일")
+        
+    return f"{' '.join(parts)} ({total_days:,}일)"
+
 etf_dict = get_etf_data()
 etf_options = list(etf_dict.keys())
 
@@ -154,7 +187,8 @@ if ticker:
 
                 end_date = start_date + duration
 
-            st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date}  ({(end_date - start_date).days:,}일)")
+            period_str = get_formatted_period(start_date, end_date)
+            st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date} ({period_str})")
 
             # --- 전체 차트 고정 출력 (확대/축소 및 드래그 완전 차단) ---
             df_all_reset = df_all.reset_index()
@@ -168,7 +202,6 @@ if ticker:
                 annotation_text="투자 구간", annotation_position="top left"
             )
 
-            # X축, Y축 범위를 고정하여 확대/축소나 이동이 일어나지 않도록 설정
             fig.update_layout(
                 xaxis_title="날짜",
                 yaxis_title="종가 (원)",

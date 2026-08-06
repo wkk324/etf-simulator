@@ -12,10 +12,10 @@ st.title("🏦 한국 ETF 분배금 내역·세금 계산")
 st.caption("과거 데이터 기반 투자 시뮬레이션 및 분배금·세금 정산 결과입니다.")
 st.divider()
 
-# --- 데이터 준비 (추천 ETF 최상단 강제 배치 방식) ---
+# --- 데이터 준비 (추천 ETF 최상단 고정 및 안전한 데이터 처리) ---
 @st.cache_data
 def get_etf_data(sort_by):
-    # 상단에 고정으로 보여줄 추천 ETF 목록 (데이터프레임 형태로 생성)
+    # 상단에 고정할 추천 ETF 목록 (6자리 문자열 코드 보장)
     rec_data = [
         {"Name": "ACE 미국배당다우존스", "Symbol": "402970"},
         {"Name": "KODEX 200", "Symbol": "069500"},
@@ -27,9 +27,12 @@ def get_etf_data(sort_by):
     try:
         df_etf = fdr.StockListing("ETF/KR")
         
+        # 종목 코드를 항상 6자리 문자열로 변환 (예: 69500 -> 069500)
+        df_etf['Symbol'] = df_etf['Symbol'].astype(str).str.zfill(6)
+        
         # 중복 방지를 위해 추천 ETF의 종목코드들은 전체 목록에서 제외
-        rec_symbols = [item["Symbol"] for item in rec_data]
-        df_etf = df_etf[~df_etf['Symbol'].astype(str).isin(rec_symbols)]
+        rec_symbols = list(df_rec['Symbol'])
+        df_etf = df_etf[~df_etf['Symbol'].isin(rec_symbols)]
         
         # 사용자가 선택한 정렬 방식 적용
         if sort_by == "가나다 이름순":
@@ -37,7 +40,7 @@ def get_etf_data(sort_by):
         else:
             df_etf = df_etf.sort_values(by="Symbol", ascending=True)
             
-        # 추천 ETF를 데이터프레임 맨 위에 강제로 결합 (concat)
+        # 추천 ETF를 데이터프레임 맨 위에 결합
         df_final = pd.concat([df_rec, df_etf], ignore_index=True)
         
     except:

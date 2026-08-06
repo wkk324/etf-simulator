@@ -71,8 +71,23 @@ st.sidebar.header("📋 이번 비교 조건")
 sort_option = st.sidebar.radio("ETF 목록 정렬 방식", ["가나다 이름순", "종목 코드순"], index=0, horizontal=True)
 
 etf_dict = get_etf_data(sort_option)
-selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택", options=list(etf_dict.keys()))
-ticker = etf_dict[selected_etf_label]
+
+# 🔍 [추가] 이름/코드 검색어 입력 필드
+search_keyword = st.sidebar.text_input("🔍 ETF 이름/코드 검색", placeholder="예: 미국배당 또는 402970")
+
+# 검색어가 있는 경우 딕셔너리 필터링
+if search_keyword:
+    filtered_etf_dict = {k: v for k, v in etf_dict.items() if search_keyword.lower() in k.lower()}
+else:
+    filtered_etf_dict = etf_dict
+
+# 검색 결과가 없을 경우 예외 처리
+if not filtered_etf_dict:
+    st.sidebar.warning("검색 결과가 없습니다.")
+    filtered_etf_dict = etf_dict
+
+selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택", options=list(filtered_etf_dict.keys()))
+ticker = filtered_etf_dict[selected_etf_label]
 
 investment_option = st.sidebar.radio("투자금 선택", ["1억", "3억", "5억", "10억", "기타"], index=0, horizontal=True)
 
@@ -169,7 +184,6 @@ if ticker:
 
         fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date), fillcolor="blue", opacity=0.15, layer="below", line_width=0)
         
-        # 차트의 시작과 끝을 데이터 전체 범위로 고정하여 블록과 날짜 축 일치
         fig.update_layout(
             xaxis=dict(range=[earliest_date, latest_date], tickformat="%Y-%m-%d", fixedrange=False), 
             yaxis=dict(tickformat=",d", fixedrange=False), 
@@ -215,7 +229,7 @@ if ticker:
             if combined_income > 20000000:
                 excess_income = combined_income - 20000000
                 est_tax_base = calculate_income_tax(combined_income)
-                est_tax_total = est_tax_base * 1.1  # 지방세(10%) 포함
+                est_tax_total = est_tax_base * 1.1  
                 net_dividend = total_div_gross - est_tax_total  
                 
                 st.error("⚠️ 금융소득종합과세 대상입니다.")

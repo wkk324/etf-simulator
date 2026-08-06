@@ -90,11 +90,11 @@ else:
 st.sidebar.markdown("**차트 형태 선택**")
 chart_type = st.sidebar.radio("차트 종류", ["선 차트 (Line)", "캔들 차트 (Candle)"], index=0, horizontal=True)
 
-period_mode = st.sidebar.radio("방식 선택", ["고정 기간 (1/3/5/10년)", "직접 날짜 지정"], index=0, horizontal=True)
-if period_mode == "고정 기간 (1/3/5/10년)":
-    period_option = st.sidebar.radio("기간 선택", ["1년", "3년", "5년", "10년", "전체"], index=1, horizontal=True)
-else:
+period_mode = st.sidebar.radio("방식 선택", ["기간 범위 선택 (슬라이더)", "직접 날짜 지정"], index=0, horizontal=True)
+if period_mode == "직접 날짜 지정":
     period_option = "직접지정"
+else:
+    period_option = st.sidebar.radio("기본 기간 선택", ["1년", "3년", "5년", "10년", "전체"], index=1, horizontal=True)
 
 insurance_type = st.sidebar.radio("건강보험 가입 유형", ["지역가입자", "직장가입자"], index=0, horizontal=True)
 income_map = {"없음": 0, "3천만": 30000000, "5천만": 50000000, "7천만": 70000000, "1억": 100000000}
@@ -114,8 +114,22 @@ if ticker:
             start_date, end_date = earliest_date, latest_date
         else:
             duration = timedelta(days=PERIOD_DAYS[period_option])
-            start_date = st.slider("매수 시점", min_value=earliest_date, max_value=max(earliest_date, latest_date - duration), value=max(earliest_date, latest_date - duration))
-            end_date = start_date + duration
+            default_start = max(earliest_date, latest_date - duration)
+            
+            # 매수/매도 시점을 모두 선택할 수 있는 튜플 형태의 슬라이더 제공
+            date_range = st.slider(
+                "📅 매수 시점 및 매도 시점 선택 (범위)",
+                min_value=earliest_date,
+                max_value=latest_date,
+                value=(default_start, latest_date),
+                format="YYYY-MM-DD"
+            )
+            start_date, end_date = date_range
+
+        # 선택된 기간 계산 및 출력
+        holding_days = (end_date - start_date).days
+        holding_years = holding_days / 365.0
+        st.info(f"📍 **선택된 투자 기간:** {start_date} ~ {end_date} (총 **{holding_days:,}일** / 약 **{holding_years:.1f}년** 보유)")
 
         # 차트 출력
         df_all_reset = df_all.reset_index()
@@ -165,7 +179,7 @@ if ticker:
             col4.metric("매수 평가금액", f"{actual_invested:,.0f} 원")
             col5.metric("매도 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원 ({eval_profit_pct:.2f}%)")
             
-            total_dps = calculate_etf_dividends(ticker, buy_price, (end_date - start_date).days)
+            total_dps = calculate_etf_dividends(ticker, buy_price, holding_days)
             total_div_gross = quantity * total_dps
             combined_income = other_income + total_div_gross
             
@@ -177,7 +191,7 @@ if ticker:
                 excess_income = combined_income - 20000000
                 est_tax_base = calculate_income_tax(combined_income)
                 est_tax_total = est_tax_base * 1.1  # 지방세(10%) 포함 총 추가 세액
-                net_dividend = total_div_gross - est_tax_total  # 세전 배당금에서 총 추가 세액 차감
+                net_dividend = total_div_gross - est_tax_total  
                 
                 st.error("⚠️ 금융소득종합과세 대상입니다.")
                 st.write(f"- **합산 금융소득:** {combined_income:,.0f} 원")

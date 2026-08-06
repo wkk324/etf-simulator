@@ -120,7 +120,6 @@ if ticker:
             duration_days = PERIOD_DAYS[fixed_duration_label]
             max_start = max(earliest_date, latest_date - timedelta(days=duration_days))
             
-            # 시작일만 슬라이더로 조절하고, 종료일은 선택된 기간만큼 자동으로 계산
             start_date = st.slider(
                 f"📅 {fixed_duration_label} 기간 이동 (매수 시점 조절)",
                 min_value=earliest_date,
@@ -129,7 +128,6 @@ if ticker:
                 format="YYYY-MM-DD"
             )
             end_date = start_date + timedelta(days=duration_days)
-            # 만약 데이터의 마지막 날짜를 넘어가면 보정
             if end_date > latest_date:
                 end_date = latest_date
         else:
@@ -170,7 +168,15 @@ if ticker:
             )])
 
         fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date), fillcolor="blue", opacity=0.15, layer="below", line_width=0)
-        fig.update_layout(xaxis=dict(tickformat="%Y-%m-%d", fixedrange=False), yaxis=dict(tickformat=",d", fixedrange=False), xaxis_rangeslider_visible=False, hovermode="x unified", dragmode="pan")
+        
+        # 차트의 시작과 끝을 데이터 전체 범위로 고정하여 블록과 날짜 축 일치
+        fig.update_layout(
+            xaxis=dict(range=[earliest_date, latest_date], tickformat="%Y-%m-%d", fixedrange=False), 
+            yaxis=dict(tickformat=",d", fixedrange=False), 
+            xaxis_rangeslider_visible=False, 
+            hovermode="x unified", 
+            dragmode="pan"
+        )
         
         st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
 
@@ -209,14 +215,13 @@ if ticker:
             if combined_income > 20000000:
                 excess_income = combined_income - 20000000
                 est_tax_base = calculate_income_tax(combined_income)
-                est_tax_total = est_tax_base * 1.1  # 지방세(10%) 포함 총 추가 세액
+                est_tax_total = est_tax_base * 1.1  # 지방세(10%) 포함
                 net_dividend = total_div_gross - est_tax_total  
                 
                 st.error("⚠️ 금융소득종합과세 대상입니다.")
                 st.write(f"- **합산 금융소득:** {combined_income:,.0f} 원")
                 st.write(f"- **종합과세 적용 대상액:** {excess_income:,.0f} 원")
-                st.write(f"- **예상 추가 소득세(지방세 포함):** 약 {est_tax_total:,.0f} 원 (소득세 {est_tax_base:,.0f} 원 + 지방세 {est_tax_base * 0.1:,.0f} 원)")
-                st.caption("※ 실제 세액은 기본공제 및 기타 소득 환경에 따라 크게 달라질 수 있습니다.")
+                st.write(f"- **예상 추가 소득세(지방세 포함):** 약 {est_tax_total:,.0f} 원")
             else:
                 tax_154 = total_div_gross * 0.154
                 net_dividend = total_div_gross - tax_154
@@ -224,7 +229,6 @@ if ticker:
                 st.write(f"- **원천징수 예상 세액(15.4%):** {tax_154:,.0f} 원")
                 st.write(f"- **세후 예상 수령액:** {net_dividend:,.0f} 원")
 
-            # --- 최종 총수익 요약 ---
             st.divider()
             st.subheader("💰 최종 총수익 요약 (세후 기준)")
             

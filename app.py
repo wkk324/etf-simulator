@@ -159,9 +159,9 @@ if ticker:
             st.subheader(f"📌 {selected_etf_label} 시뮬레이션 결과")
             
             col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("매수 주식수", f"{quantity:,} 주")
-            col2.metric("매수 시점 주가", f"{buy_price:,.0f} 원")
-            col3.metric("매도 시점 주가", f"{sell_price:,.0f} 원", delta=f"{price_diff:,.0f} 원 ({price_diff_pct:.2f}%)")
+            col1.metric("주식수", f"{quantity:,} 주")
+            col2.metric("매수 주가", f"{buy_price:,.0f} 원")
+            col3.metric("매도 주가", f"{sell_price:,.0f} 원", delta=f"{price_diff:,.0f} 원 ({price_diff_pct:.2f}%)")
             col4.metric("매수 평가금액", f"{actual_invested:,.0f} 원")
             col5.metric("매도 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원 ({eval_profit_pct:.2f}%)")
             

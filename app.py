@@ -56,6 +56,14 @@ def get_preset_range(period_option):
     else: start_ = datetime(2010, 1, 1)
     return start_.date(), today_.date()
 
+# 차트 드래그로 지정된 "대기 중" 구간이 있으면, 위젯이 그려지기 전(=여기)에 먼저 반영합니다.
+# (위젯이 이미 그려진 뒤에는 같은 키의 session_state를 직접 수정할 수 없기 때문에
+#  드래그 핸들러에서는 곧바로 start_date_key를 바꾸지 않고 _pending_range 에만 저장합니다.)
+if "_pending_range" in st.session_state:
+    _pending_start, _pending_end = st.session_state.pop("_pending_range")
+    st.session_state["start_date_key"] = _pending_start
+    st.session_state["end_date_key"] = _pending_end
+
 etf_dict = get_etf_data()
 etf_options = list(etf_dict.keys())
 
@@ -103,8 +111,7 @@ end_date = st.sidebar.date_input("종료일", key="end_date_key")
 
 if st.sidebar.button("↩️ 프리셋 기간으로 초기화"):
     preset_start, preset_end = get_preset_range(period_option)
-    st.session_state["start_date_key"] = preset_start
-    st.session_state["end_date_key"] = preset_end
+    st.session_state["_pending_range"] = (preset_start, preset_end)
     st.rerun()
 
 st.sidebar.markdown("**현재 상황 (세금/건보료 조건)**")
@@ -174,8 +181,10 @@ if ticker:
                         new_end = pd.to_datetime(b["x1"]).date()
 
                 if new_start and new_end and new_start != new_end and (new_start, new_end) != (start_date, end_date):
-                    st.session_state["start_date_key"] = min(new_start, new_end)
-                    st.session_state["end_date_key"] = max(new_start, new_end)
+                    # 주의: start_date_key/end_date_key는 이미 위에서 date_input 위젯으로 그려졌기 때문에
+                    # 이 시점에는 직접 수정할 수 없습니다. 대신 "대기 범위"에 저장해두고 재실행하면,
+                    # 다음 실행에서 위젯이 그려지기 전에(스크립트 최상단) 반영됩니다.
+                    st.session_state["_pending_range"] = (min(new_start, new_end), max(new_start, new_end))
                     st.session_state["_prev_period_option"] = period_option  # 프리셋으로 되돌아가지 않도록 동기화
                     st.rerun()
 

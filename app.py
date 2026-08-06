@@ -164,6 +164,7 @@ if ticker:
 
                 st.divider()
                 st.subheader("📈 전체 주가 흐름 및 투자 구간")
+                st.caption("🖱️ 드래그: 화면 이동 | 🖲️ 마우스 휠: 확대/축소")
 
                 df_all_reset = df_all.reset_index()
                 date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
@@ -185,8 +186,21 @@ if ticker:
                     text=["매수", "현재"], textposition="top center"
                 ))
 
-                fig.update_layout(xaxis_title="날짜", yaxis_title="종가 (원)", hovermode="x unified")
-                st.plotly_chart(fig, use_container_width=True)
+                fig.update_layout(
+                    xaxis_title="날짜",
+                    yaxis_title="종가 (원)",
+                    hovermode="x unified",
+                    dragmode="pan"  # 드래그는 화면 이동(팬)으로 동작
+                )
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    config={
+                        "scrollZoom": True,      # 마우스 휠로 확대/축소
+                        "displayModeBar": True,  # 상단 툴바(줌 리셋 등) 표시
+                    }
+                )
 
         except Exception as e:
             st.error("데이터 계산 중 오류가 발생했습니다.")

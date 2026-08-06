@@ -175,12 +175,14 @@ if ticker:
             
             if combined_income > 20000000:
                 excess_income = combined_income - 20000000
-                est_tax = calculate_income_tax(combined_income)
-                net_dividend = total_div_gross - est_tax # 종합과세 시 단순 추정 세후 배당금
+                est_tax_base = calculate_income_tax(combined_income)
+                est_tax_total = est_tax_base * 1.1  # 지방세(10%) 포함 총 추가 세액
+                net_dividend = total_div_gross - est_tax_total  # 세전 배당금에서 총 추가 세액 차감
+                
                 st.error("⚠️ 금융소득종합과세 대상입니다.")
                 st.write(f"- **합산 금융소득:** {combined_income:,.0f} 원")
                 st.write(f"- **종합과세 적용 대상액:** {excess_income:,.0f} 원")
-                st.write(f"- **예상 추가 소득세(지방세 별도):** 약 {est_tax:,.0f} 원")
+                st.write(f"- **예상 추가 소득세(지방세 포함):** 약 {est_tax_total:,.0f} 원 (소득세 {est_tax_base:,.0f} 원 + 지방세 {est_tax_base * 0.1:,.0f} 원)")
                 st.caption("※ 실제 세액은 기본공제 및 기타 소득 환경에 따라 크게 달라질 수 있습니다.")
             else:
                 tax_154 = total_div_gross * 0.154
@@ -189,7 +191,7 @@ if ticker:
                 st.write(f"- **원천징수 예상 세액(15.4%):** {tax_154:,.0f} 원")
                 st.write(f"- **세후 예상 수령액:** {net_dividend:,.0f} 원")
 
-            # --- 최종 총수익 요약 추가 ---
+            # --- 최종 총수익 요약 ---
             st.divider()
             st.subheader("💰 최종 총수익 요약 (세후 기준)")
             

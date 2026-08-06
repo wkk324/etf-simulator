@@ -227,7 +227,10 @@ if ticker:
                 yaxis_title="종가 (원)",
                 hovermode="x unified",
                 xaxis=dict(fixedrange=True),
-                yaxis=dict(fixedrange=True),
+                yaxis=dict(
+                    fixedrange=True,
+                    tickformat=",d"  # 세로축 숫자를 천 단위 콤마가 포함된 일반 정수(원 단위)로 고정
+                ),
             )
 
             st.plotly_chart(

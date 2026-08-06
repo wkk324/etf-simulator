@@ -157,7 +157,7 @@ if ticker:
 
             st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date}  ({(end_date - start_date).days:,}일)")
 
-            # --- 차트 (차트 화면 드래그 이동을 막고 고정) ---
+            # --- 차트 (마우스 드래그 이동 원천 차단) ---
             df_all_reset = df_all.reset_index()
             date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
 
@@ -169,17 +169,22 @@ if ticker:
                 annotation_text="투자 구간", annotation_position="top left"
             )
 
+            # 드래그, 줌 등 마우스 개입을 완전히 막기 위한 설정
             fig.update_layout(
                 xaxis_title="날짜",
                 yaxis_title="종가 (원)",
                 hovermode="x unified",
-                dragmode=False,  # 차트 화면을 마우스로 끌어 이동시키는 기능 차단
+                xaxis=dict(fixedrange=True),
+                yaxis=dict(fixedrange=True),
             )
 
             st.plotly_chart(
                 fig,
                 use_container_width=True,
-                config={"scrollZoom": False, "displayModeBar": True},  # 휠 Zoom도 막고 고정
+                config={
+                    "scrollZoom": False,
+                    "displayModeBar": False,  # 상단 툴바도 숨겨서 깔끔하게 고정
+                },
             )
 
             st.divider()

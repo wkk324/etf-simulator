@@ -108,6 +108,15 @@ if ticker:
                     # 전체 기간은 고정 구간이라 슬라이더가 필요 없습니다.
                     start_date, end_date = earliest_date, latest_date
                     st.caption("🖲️ 마우스 휠: 확대/축소 | '전체' 선택 시에는 상장일부터 최근까지 전 구간이 자동으로 계산됩니다.")
+                elif earliest_date + timedelta(days=PERIOD_DAYS[period_option]) >= latest_date:
+                    # 선택한 기간 길이가 실제 보유 가능한 데이터 기간보다 깁니다 (예: 상장한 지 얼마 안 된 ETF)
+                    # → 슬라이더가 움직일 여유가 없으므로, 이동 없이 데이터가 존재하는 전체 구간을 그대로 사용합니다.
+                    start_date, end_date = earliest_date, latest_date
+                    st.warning(
+                        f"⚠️ 선택하신 ETF의 시세 데이터는 {earliest_date} 부터 시작해서, "
+                        f"'{period_option}' 구간을 옮길 만큼 데이터가 충분하지 않아요. "
+                        f"데이터가 있는 전체 구간({earliest_date} ~ {latest_date})으로 계산합니다."
+                    )
                 else:
                     duration = timedelta(days=PERIOD_DAYS[period_option])
                     min_start = earliest_date

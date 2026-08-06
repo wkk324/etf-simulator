@@ -12,39 +12,40 @@ st.title("🏦 한국 ETF 분배금 내역·세금 계산")
 st.caption("과거 데이터 기반 투자 시뮬레이션 및 분배금·세금 정산 결과입니다.")
 st.divider()
 
-# --- 데이터 준비 (캐시 갱신 및 추천 ETF 고정) ---
-@st.cache_data(ttl=3600)  # 1시간마다 캐시 갱신
+# --- 데이터 준비 (추천 ETF 보장 및 정렬) ---
+@st.cache_data(ttl=3600)
 def get_etf_data(sort_by):
-    # 상단에 고정할 추천 ETF 목록
-    rec_data = [
-        {"Name": "ACE 미국배당다우존스", "Symbol": "402970"},
-        {"Name": "KODEX 200", "Symbol": "069500"},
-        {"Name": "TIGER 미국나스닥100", "Symbol": "133690"},
-        {"Name": "TIGER 미국배당+7%프리미엄다우존스", "Symbol": "459580"}
-    ]
-    df_rec = pd.DataFrame(rec_data)
+    # 1. 무조건 최상단에 고정될 추천 ETF 딕셔너리 정의
+    recommended_dict = {
+        "ACE 미국배당다우존스 (402970)": "402970",
+        "KODEX 200 (069500)": "069500",
+        "TIGER 미국나스닥100 (133690)": "133690",
+        "TIGER 미국배당+7%프리미엄다우존스 (459580)": "459580"
+    }
     
+    other_dict = {}
     try:
         df_etf = fdr.StockListing("ETF/KR")
-        df_etf['Symbol'] = df_etf['Symbol'].astype(str).str.zfill(6)
-        
-        # 중복 방지
-        rec_symbols = list(df_rec['Symbol'])
-        df_etf = df_etf[~df_etf['Symbol'].isin(rec_symbols)]
-        
-        # 정렬
-        if sort_by == "가나다 이름순":
-            df_etf = df_etf.sort_values(by="Name", ascending=True)
-        else:
-            df_etf = df_etf.sort_values(by="Symbol", ascending=True)
+        if not df_etf.empty:
+            df_etf['Symbol'] = df_etf['Symbol'].astype(str).str.zfill(6)
             
-        # 추천 목록을 맨 위에 결합
-        df_final = pd.concat([df_rec, df_etf], ignore_index=True)
+            # 추천 종목들은 일반 목록에서 중복 제거
+            rec_symbols = list(recommended_dict.values())
+            df_etf = df_etf[~df_etf['Symbol'].isin(rec_symbols)]
+            
+            # 정렬 적용
+            if sort_by == "가나다 이름순":
+                df_etf = df_etf.sort_values(by="Name", ascending=True)
+            else:
+                df_etf = df_etf.sort_values(by="Symbol", ascending=True)
+                
+            other_dict = {f"{row['Name']} ({row['Symbol']})": str(row['Symbol']) for _, row in df_etf.iterrows()}
     except:
-        df_final = df_rec
+        pass
         
-    etf_dict = {f"{row['Name']} ({row['Symbol']})": str(row['Symbol']) for _, row in df_final.iterrows()}
-    return etf_dict
+    # 추천 목록 + 나머지 목록 합치기
+    final_dict = {**recommended_dict, **other_dict}
+    return final_dict
 
 @st.cache_data
 def get_price_history(ticker):

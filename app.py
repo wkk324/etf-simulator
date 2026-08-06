@@ -70,21 +70,18 @@ sort_option = st.sidebar.radio("ETF 목록 정렬 방식", ["가나다 이름순
 # ETF 데이터 로드
 etf_dict = get_etf_data(sort_option)
 
-# [수정] 검색 기능 추가
-search_query = st.sidebar.text_input("🔍 ETF 이름/코드 검색", placeholder="예: 미국배당, 402970")
+# 🔍 [명확하게 추가된 검색창]
+search_query = st.sidebar.text_input("🔍 ETF 이름/코드 직접 검색", placeholder="예: 미국배당 또는 402970")
 
 if search_query:
-    # 검색어가 포함된 항목만 필터링
     filtered_dict = {k: v for k, v in etf_dict.items() if search_query.lower() in k.lower()}
+    options = list(filtered_dict.keys()) if filtered_dict else list(etf_dict.keys())
     if not filtered_dict:
-        st.sidebar.warning("검색 결과가 없습니다.")
-        options = list(etf_dict.keys())
-    else:
-        options = list(filtered_dict.keys())
+        st.sidebar.warning("검색 결과가 없어 전체 목록을 표시합니다.")
 else:
     options = list(etf_dict.keys())
 
-selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택", options=options)
+selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 선택", options=options)
 ticker = etf_dict[selected_etf_label]
 
 investment_option = st.sidebar.radio("투자금 선택", ["1억", "3억", "5억", "10억", "기타"], index=0, horizontal=True)

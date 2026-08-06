@@ -130,7 +130,7 @@ investment_amount = st.sidebar.number_input(
 st.sidebar.markdown("**투자 기간**")
 period_option = st.sidebar.radio(
     "기간 선택",
-    ["1년", "3년", "전체"],
+    ["1년", "3년", "5년", "10년", "전체"],
     index=1,
     horizontal=True,
     label_visibility="collapsed",

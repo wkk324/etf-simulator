@@ -158,19 +158,26 @@ if ticker:
                 )
 
                 # 드래그로 새 구간을 선택했으면 시작일/종료일 갱신 후 재계산
+                # (Plotly 박스 선택 결과 스키마가 버전에 따라 {"x":[x0,x1]} 또는 {"x0":.., "x1":..} 로 달라질 수 있어 둘 다 대응)
                 box_sel = []
                 if chart_event and chart_event.get("selection"):
                     box_sel = chart_event["selection"].get("box", [])
 
-                if box_sel and "x" in box_sel[0]:
-                    x0, x1 = box_sel[0]["x"]
-                    new_start = pd.to_datetime(x0).date()
-                    new_end = pd.to_datetime(x1).date()
-                    if new_start != new_end and (new_start, new_end) != (start_date, end_date):
-                        st.session_state["start_date_key"] = min(new_start, new_end)
-                        st.session_state["end_date_key"] = max(new_start, new_end)
-                        st.session_state["_prev_period_option"] = period_option  # 프리셋으로 되돌아가지 않도록 동기화
-                        st.rerun()
+                new_start = new_end = None
+                if box_sel:
+                    b = box_sel[0]
+                    if "x" in b and b["x"] is not None:
+                        x0, x1 = b["x"][0], b["x"][1]
+                        new_start, new_end = pd.to_datetime(x0).date(), pd.to_datetime(x1).date()
+                    elif "x0" in b and "x1" in b:
+                        new_start = pd.to_datetime(b["x0"]).date()
+                        new_end = pd.to_datetime(b["x1"]).date()
+
+                if new_start and new_end and new_start != new_end and (new_start, new_end) != (start_date, end_date):
+                    st.session_state["start_date_key"] = min(new_start, new_end)
+                    st.session_state["end_date_key"] = max(new_start, new_end)
+                    st.session_state["_prev_period_option"] = period_option  # 프리셋으로 되돌아가지 않도록 동기화
+                    st.rerun()
 
                 st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date}  ({(end_date - start_date).days:,}일)")
                 st.divider()
@@ -243,3 +250,5 @@ if ticker:
 
         except Exception as e:
             st.error("데이터 계산 중 오류가 발생했습니다.")
+            with st.expander("🔧 오류 상세 보기 (문제 해결용)"):
+                st.exception(e)

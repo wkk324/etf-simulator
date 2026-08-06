@@ -146,15 +146,15 @@ if ticker:
         df = df_all.loc[mask]
         if not df.empty:
             buy_price = df.iloc[0]["Close"]
-            sell_price = df.iloc[-1]["Close"]  # 매도(보유 종료) 시점 주가
-            price_diff = sell_price - buy_price  # 주당 오른 금액
-            price_diff_pct = (price_diff / buy_price) * 100  # 주당 수익률(%)
+            sell_price = df.iloc[-1]["Close"]  
+            price_diff = sell_price - buy_price  
+            price_diff_pct = (price_diff / buy_price) * 100  
             
             quantity = math.floor(investment_amount / buy_price)
-            actual_invested = quantity * buy_price  # 매수 평가금액 (실제 주식 매수 투입금)
+            actual_invested = quantity * buy_price  
             total_eval = (quantity * sell_price) + (investment_amount - actual_invested)
             eval_profit = total_eval - investment_amount
-            eval_profit_pct = (eval_profit / investment_amount) * 100  # 매도 평가금액 수익률(%)
+            eval_profit_pct = (eval_profit / investment_amount) * 100  
             
             st.subheader(f"📌 {selected_etf_label} 시뮬레이션 결과")
             
@@ -176,6 +176,7 @@ if ticker:
             if combined_income > 20000000:
                 excess_income = combined_income - 20000000
                 est_tax = calculate_income_tax(combined_income)
+                net_dividend = total_div_gross - est_tax # 종합과세 시 단순 추정 세후 배당금
                 st.error("⚠️ 금융소득종합과세 대상입니다.")
                 st.write(f"- **합산 금융소득:** {combined_income:,.0f} 원")
                 st.write(f"- **종합과세 적용 대상액:** {excess_income:,.0f} 원")
@@ -183,6 +184,19 @@ if ticker:
                 st.caption("※ 실제 세액은 기본공제 및 기타 소득 환경에 따라 크게 달라질 수 있습니다.")
             else:
                 tax_154 = total_div_gross * 0.154
+                net_dividend = total_div_gross - tax_154
                 st.success("원천징수 분리과세 구간입니다.")
                 st.write(f"- **원천징수 예상 세액(15.4%):** {tax_154:,.0f} 원")
-                st.write(f"- **세후 예상 수령액:** {total_div_gross - tax_154:,.0f} 원")
+                st.write(f"- **세후 예상 수령액:** {net_dividend:,.0f} 원")
+
+            # --- 최종 총수익 요약 추가 ---
+            st.divider()
+            st.subheader("💰 최종 총수익 요약 (세후 기준)")
+            
+            total_net_profit = eval_profit + net_dividend
+            total_net_profit_pct = (total_net_profit / investment_amount) * 100
+            
+            col_t1, col_t2, col_t3 = st.columns(3)
+            col_t1.metric("매도 차액 (자본이익)", f"{eval_profit:,.0f} 원")
+            col_t2.metric("세후 예상 배당금", f"{net_dividend:,.0f} 원")
+            col_t3.metric("최종 총수익 (세후)", f"{total_net_profit:,.0f} 원", delta=f"수익률 {total_net_profit_pct:.2f}%")

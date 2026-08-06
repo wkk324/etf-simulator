@@ -12,25 +12,25 @@ st.title("🏦 한국 ETF 분배금 내역·세금 계산")
 st.caption("과거 데이터 기반 투자 시뮬레이션 및 분배금·세금 정산 결과입니다.")
 st.divider()
 
-# --- 데이터 준비 (추천 ETF 보장 및 정렬) ---
+# --- 데이터 준비 (리스트 기반 추천 ETF 최상단 고정) ---
 @st.cache_data(ttl=3600)
 def get_etf_data(sort_by):
-    # 1. 무조건 최상단에 고정될 추천 ETF 딕셔너리 정의
-    recommended_dict = {
-        "ACE 미국배당다우존스 (402970)": "402970",
-        "KODEX 200 (069500)": "069500",
-        "TIGER 미국나스닥100 (133690)": "133690",
-        "TIGER 미국배당+7%프리미엄다우존스 (459580)": "459580"
-    }
+    # 1. 무조건 맨 위에 고정할 추천 ETF 목록 (라벨: 코드)
+    recommended_list = [
+        ("ACE 미국배당다우존스 (402970)", "402970"),
+        ("KODEX 200 (069500)", "069500"),
+        ("TIGER 미국나스닥100 (133690)", "133690"),
+        ("TIGER 미국배당+7%프리미엄다우존스 (459580)", "459580")
+    ]
     
-    other_dict = {}
+    other_list = []
     try:
         df_etf = fdr.StockListing("ETF/KR")
         if not df_etf.empty:
             df_etf['Symbol'] = df_etf['Symbol'].astype(str).str.zfill(6)
             
-            # 추천 종목들은 일반 목록에서 중복 제거
-            rec_symbols = list(recommended_dict.values())
+            # 추천 종목 중복 제거
+            rec_symbols = [item[1] for item in recommended_list]
             df_etf = df_etf[~df_etf['Symbol'].isin(rec_symbols)]
             
             # 정렬 적용
@@ -39,13 +39,15 @@ def get_etf_data(sort_by):
             else:
                 df_etf = df_etf.sort_values(by="Symbol", ascending=True)
                 
-            other_dict = {f"{row['Name']} ({row['Symbol']})": str(row['Symbol']) for _, row in df_etf.iterrows()}
+            other_list = [(f"{row['Name']} ({row['Symbol']})", str(row['Symbol'])) for _, row in df_etf.iterrows()]
     except:
         pass
         
-    # 추천 목록 + 나머지 목록 합치기
-    final_dict = {**recommended_dict, **other_dict}
-    return final_dict
+    # 리스트를 순서대로 합치기 (추천 목록이 무조건 맨 위!)
+    final_list = recommended_list + other_list
+    
+    # 딕셔너리로 변환 (Streamlit selectbox 호환용)
+    return {label: code for label, code in final_list}
 
 @st.cache_data
 def get_price_history(ticker):

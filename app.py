@@ -90,9 +90,13 @@ else:
 st.sidebar.markdown("**차트 형태 선택**")
 chart_type = st.sidebar.radio("차트 종류", ["선 차트 (Line)", "캔들 차트 (Candle)"], index=0, horizontal=True)
 
-period_mode = st.sidebar.radio("방식 선택", ["기간 범위 선택 (슬라이더)", "직접 날짜 지정"], index=0, horizontal=True)
+period_mode = st.sidebar.radio("방식 선택", ["기간 범위 자유 선택", "고정 기간 이동 (슬라이더)", "직접 날짜 지정"], index=0, horizontal=True)
+
 if period_mode == "직접 날짜 지정":
     period_option = "직접지정"
+elif period_mode == "고정 기간 이동 (슬라이더)":
+    period_option = "고정기간이동"
+    fixed_duration_label = st.sidebar.selectbox("고정할 투자 기간 선택", ["1년", "3년", "5년", "10년"], index=1)
 else:
     period_option = st.sidebar.radio("기본 기간 선택", ["1년", "3년", "5년", "10년", "전체"], index=1, horizontal=True)
 
@@ -112,11 +116,26 @@ if ticker:
             end_date = col_d2.date_input("매도일", value=latest_date, min_value=earliest_date, max_value=latest_date)
         elif period_option == "전체":
             start_date, end_date = earliest_date, latest_date
+        elif period_option == "고정기간이동":
+            duration_days = PERIOD_DAYS[fixed_duration_label]
+            max_start = max(earliest_date, latest_date - timedelta(days=duration_days))
+            
+            # 시작일만 슬라이더로 조절하고, 종료일은 선택된 기간만큼 자동으로 계산
+            start_date = st.slider(
+                f"📅 {fixed_duration_label} 기간 이동 (매수 시점 조절)",
+                min_value=earliest_date,
+                max_value=max_start,
+                value=max(earliest_date, latest_date - timedelta(days=duration_days)),
+                format="YYYY-MM-DD"
+            )
+            end_date = start_date + timedelta(days=duration_days)
+            # 만약 데이터의 마지막 날짜를 넘어가면 보정
+            if end_date > latest_date:
+                end_date = latest_date
         else:
             duration = timedelta(days=PERIOD_DAYS[period_option])
             default_start = max(earliest_date, latest_date - duration)
             
-            # 매수/매도 시점을 모두 선택할 수 있는 튜플 형태의 슬라이더 제공
             date_range = st.slider(
                 "📅 매수 시점 및 매도 시점 선택 (범위)",
                 min_value=earliest_date,

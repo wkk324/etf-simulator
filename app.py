@@ -81,7 +81,6 @@ money_map = {"1억": 100000000, "3억": 300000000, "5억": 500000000, "10억": 1
 investment_amount = st.sidebar.number_input("투자금 직접 입력 (원)", value=money_map[quick_money], step=1000000, format="%d")
 
 st.sidebar.markdown("**투자 기간 (고정 길이)**")
-st.sidebar.caption("아래에서 기간 길이를 고르면, 본문 차트 위 슬라이더로 그 길이의 구간을 좌우로 옮길 수 있어요.")
 period_option = st.sidebar.radio("기간 선택", ["1년", "3년", "5년", "10년", "전체"], index=1, horizontal=True, label_visibility="collapsed")
 
 st.sidebar.markdown("**현재 상황 (세금/건보료 조건)**")
@@ -157,11 +156,11 @@ if ticker:
 
             st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date}  ({(end_date - start_date).days:,}일)")
 
-            # --- 차트 (마우스 드래그 이동 원천 차단) ---
+            # --- 전체 차트 고정 출력 (확대/축소 및 드래그 완전 차단) ---
             df_all_reset = df_all.reset_index()
             date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
 
-            fig = px.line(df_all_reset, x=date_col, y="Close", title="전체 기간 주가 추이 (선택한 투자 구간 박스)")
+            fig = px.line(df_all_reset, x=date_col, y="Close", title="전체 기간 주가 추이 (고정형)")
 
             fig.add_vrect(
                 x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date),
@@ -169,7 +168,7 @@ if ticker:
                 annotation_text="투자 구간", annotation_position="top left"
             )
 
-            # 드래그, 줌 등 마우스 개입을 완전히 막기 위한 설정
+            # X축, Y축 범위를 고정하여 확대/축소나 이동이 일어나지 않도록 설정
             fig.update_layout(
                 xaxis_title="날짜",
                 yaxis_title="종가 (원)",
@@ -183,7 +182,7 @@ if ticker:
                 use_container_width=True,
                 config={
                     "scrollZoom": False,
-                    "displayModeBar": False,  # 상단 툴바도 숨겨서 깔끔하게 고정
+                    "displayModeBar": False,
                 },
             )
 

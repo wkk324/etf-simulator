@@ -92,8 +92,9 @@ other_income = income_map[quick_income]
 
 # --- 메인 연산 ---
 if ticker:
-    with st.spinner(f"'{selected_etf_label}' 시세 데이터 로딩 중..."):
-        df_all = get_price_history(ticker)
+    try:
+        with st.spinner(f"'{selected_etf_label}' 시세 데이터 로딩 중..."):
+            df_all = get_price_history(ticker)
 
         if df_all.empty:
             st.warning("시세 데이터가 존재하지 않습니다.")
@@ -109,7 +110,9 @@ if ticker:
             elif earliest_date + timedelta(days=PERIOD_DAYS[period_option]) >= latest_date:
                 start_date, end_date = earliest_date, latest_date
                 st.warning(
-                    f"⚠️ 선택하신 ETF의 데이터가 부족하여 전체 구간({earliest_date} ~ {latest_date})으로 계산합니다."
+                    f"⚠️ 선택하신 ETF의 시세 데이터는 {earliest_date} 부터 시작해서, "
+                    f"'{period_option}' 구간을 옮길 만큼 데이터가 충분하지 않아요. "
+                    f"데이터가 있는 전체 구간({earliest_date} ~ {latest_date})으로 계산합니다."
                 )
             else:
                 duration = timedelta(days=PERIOD_DAYS[period_option])
@@ -133,7 +136,7 @@ if ticker:
                 if cur_val < min_start or cur_val > max_start:
                     st.session_state["drag_start_key"] = max(min_start, min(cur_val, max_start))
 
-                st.caption(f"🎚️ **{period_option} 고정 구간을 아래 슬라이더로 좌우로 옮겨보세요**")
+                st.caption(f"🎚️ **{period_option} 고정 구간을 아래 슬라이더로 좌우로 옮겨보세요** (매수 시점이 이동합니다)")
 
                 col_slider, col_reset = st.columns([5, 1])
                 with col_slider:
@@ -152,9 +155,9 @@ if ticker:
 
                 end_date = start_date + duration
 
-            st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date} ({(end_date - start_date).days:,}일)")
+            st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date}  ({(end_date - start_date).days:,}일)")
 
-            # --- 차트 (항상 전체 기간을 보여주고 선택 구간만 하이라이트) ---
+            # --- 차트 (전체 기간 고정 + 선택 구간 하이라이트) ---
             df_all_reset = df_all.reset_index()
             date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
 
@@ -247,7 +250,7 @@ if ticker:
                     else:
                         st.info("ℹ️ **건강보험료 추가 인상 없음**")
 
-        except Exception as e:
-            st.error("데이터 계산 중 오류가 발생했습니다.")
-            with st.expander("🔧 오류 상세 보기 (문제 해결용)"):
-                st.exception(e)
+    except Exception as e:
+        st.error("데이터 계산 중 오류가 발생했습니다.")
+        with st.expander("🔧 오류 상세 보기 (문제 해결용)"):
+            st.exception(e)

@@ -157,11 +157,11 @@ if ticker:
 
             st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date}  ({(end_date - start_date).days:,}일)")
 
-            # --- 차트 (전체 기간 고정 + 선택 구간 하이라이트) ---
+            # --- 차트 (차트 화면 드래그 이동을 막고 고정) ---
             df_all_reset = df_all.reset_index()
             date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
 
-            fig = px.line(df_all_reset, x=date_col, y="Close", title="전체 기간 주가 추이 (선택한 투자 구간 하이라이트)")
+            fig = px.line(df_all_reset, x=date_col, y="Close", title="전체 기간 주가 추이 (선택한 투자 구간 박스)")
 
             fig.add_vrect(
                 x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date),
@@ -173,13 +173,13 @@ if ticker:
                 xaxis_title="날짜",
                 yaxis_title="종가 (원)",
                 hovermode="x unified",
-                dragmode="pan",
+                dragmode=False,  # 차트 화면을 마우스로 끌어 이동시키는 기능 차단
             )
 
             st.plotly_chart(
                 fig,
                 use_container_width=True,
-                config={"scrollZoom": True, "displayModeBar": True},
+                config={"scrollZoom": False, "displayModeBar": True},  # 휠 Zoom도 막고 고정
             )
 
             st.divider()

@@ -104,7 +104,7 @@ ticker = etf_dict[selected_etf_label]
 st.sidebar.markdown("**투자금**")
 quick_money = st.sidebar.radio(
     "투자금 선택",
-    ["1천만", "3천만", "1억", "3억", "5억", "10억"],
+    ["1억", "3억", "5억", "10억"],
     index=5,
     horizontal=True,
     label_visibility="collapsed",

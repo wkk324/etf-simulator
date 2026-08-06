@@ -49,7 +49,6 @@ selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택",
 ticker = etf_dict[selected_etf_label]
 investment_amount = st.sidebar.number_input("투자금 (원)", value=100000000, step=1000000, format="%d")
 
-# [추가] 차트 종류 선택 옵션
 st.sidebar.markdown("**차트 형태 선택**")
 chart_type = st.sidebar.radio("차트 종류", ["선 차트 (Line)", "캔들 차트 (Candle)"], index=0, horizontal=True)
 
@@ -80,7 +79,7 @@ if ticker:
             start_date = st.slider("매수 시점", min_value=earliest_date, max_value=max(earliest_date, latest_date - duration), value=max(earliest_date, latest_date - duration))
             end_date = start_date + duration
 
-        # 차트 출력 (선 차트 vs 캔들 차트 분기 처리)
+        # 차트 출력 (선 차트 vs 캔들 차트 정상 분기)
         df_all_reset = df_all.reset_index()
         date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
 
@@ -88,19 +87,17 @@ if ticker:
             fig = px.line(df_all_reset, x=date_col, y="Close", labels={"Close": "종가", date_col: "날짜"})
             fig.update_traces(hovertemplate="날짜: %{x|%Y-%m-%d}<br>종가: %{y:,.0f}원")
         else:
-            # 캔들 차트 생성 (시가, 고가, 저가, 종가 활용)
             fig = go.Figure(data=[go.Candlestick(
                 x=df_all_reset[date_col],
                 open=df_all_reset['Open'],
                 high=df_all_reset['High'],
                 low=df_all_reset['Low'],
                 close=df_all_reset['Close'],
-                increasing_line_color='red',  # 상승장 빨간색
-                decreasing_line_color='blue'  # 하락장 파란색
+                increasing_line_color='red',
+                decreasing_line_color='blue'
             )])
-            fig.update_layout(xaxis_title="날짜", yaxis_title="가격 (원)")
 
-        # 공통 레이아웃 및 휠 줌/이동 설정
+        # 공통 레이아웃 설정
         fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date), fillcolor="blue", opacity=0.15, layer="below", line_width=0)
         fig.update_layout(
             xaxis=dict(tickformat="%Y-%m-%d", fixedrange=False), 

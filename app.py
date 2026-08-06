@@ -41,28 +41,12 @@ DIVIDEND_RATES = {
     "368590": 0.013,
 }
 
+PERIOD_DAYS = {"1년": 365, "3년": 365 * 3, "5년": 365 * 5, "10년": 365 * 10}
+
 def calculate_etf_dividends(ticker, buy_price, days_held):
     rate = DIVIDEND_RATES.get(ticker, 0.020)
     years = max(days_held / 365.0, 0.1)
     return math.floor(buy_price * rate * years)
-
-def get_preset_range(period_option):
-    """기간 프리셋(1년/3년/5년/10년/전체)에 해당하는 (시작일, 종료일)을 반환"""
-    today_ = datetime.today()
-    if period_option == "1년": start_ = today_ - timedelta(days=365)
-    elif period_option == "3년": start_ = today_ - timedelta(days=365 * 3)
-    elif period_option == "5년": start_ = today_ - timedelta(days=365 * 5)
-    elif period_option == "10년": start_ = today_ - timedelta(days=365 * 10)
-    else: start_ = datetime(2010, 1, 1)
-    return start_.date(), today_.date()
-
-# 차트 드래그로 지정된 "대기 중" 구간이 있으면, 위젯이 그려지기 전(=여기)에 먼저 반영합니다.
-# (위젯이 이미 그려진 뒤에는 같은 키의 session_state를 직접 수정할 수 없기 때문에
-#  드래그 핸들러에서는 곧바로 start_date_key를 바꾸지 않고 _pending_range 에만 저장합니다.)
-if "_pending_range" in st.session_state:
-    _pending_start, _pending_end = st.session_state.pop("_pending_range")
-    st.session_state["start_date_key"] = _pending_start
-    st.session_state["end_date_key"] = _pending_end
 
 etf_dict = get_etf_data()
 etf_options = list(etf_dict.keys())
@@ -96,23 +80,9 @@ quick_money = st.sidebar.radio("투자금 선택", ["1억", "3억", "5억", "10�
 money_map = {"1억": 100000000, "3억": 300000000, "5억": 500000000, "10억": 1000000000}
 investment_amount = st.sidebar.number_input("투자금 직접 입력 (원)", value=money_map[quick_money], step=1000000, format="%d")
 
-st.sidebar.markdown("**투자 기간 (프리셋 또는 차트 드래그로 선택)**")
+st.sidebar.markdown("**투자 기간 (고정 길이)**")
+st.sidebar.caption("아래에서 기간 길이를 고르면, 본문 차트 위 슬라이더로 그 길이의 구간을 좌우로 옮길 수 있어요.")
 period_option = st.sidebar.radio("기간 선택", ["1년", "3년", "5년", "10년", "전체"], index=1, horizontal=True, label_visibility="collapsed")
-
-# 프리셋이 바뀌면 시작일/종료일을 프리셋 값으로 초기화 (차트 드래그로 지정했던 구간은 리셋)
-if "_prev_period_option" not in st.session_state or st.session_state["_prev_period_option"] != period_option:
-    preset_start, preset_end = get_preset_range(period_option)
-    st.session_state["start_date_key"] = preset_start
-    st.session_state["end_date_key"] = preset_end
-    st.session_state["_prev_period_option"] = period_option
-
-start_date = st.sidebar.date_input("시작일", key="start_date_key")
-end_date = st.sidebar.date_input("종료일", key="end_date_key")
-
-if st.sidebar.button("↩️ 프리셋 기간으로 초기화"):
-    preset_start, preset_end = get_preset_range(period_option)
-    st.session_state["_pending_range"] = (preset_start, preset_end)
-    st.rerun()
 
 st.sidebar.markdown("**현재 상황 (세금/건보료 조건)**")
 insurance_type = st.sidebar.radio("건강보험 가입 유형", ["지역가입자", "직장가입자"], index=0, horizontal=True)
@@ -129,16 +99,67 @@ if ticker:
             if df_all.empty:
                 st.warning("시세 데이터가 존재하지 않습니다.")
             else:
-                # --- 차트: 여기서 드래그로 구간을 선택하면 투자 기간이 자동 반영됩니다 ---
-                st.subheader("📈 전체 주가 흐름 및 투자 구간 선택")
-                st.caption("🖱️ **차트를 드래그**하면 그 구간이 투자 기간으로 자동 반영됩니다 | 🖲️ **마우스 휠**: 확대/축소 | 화면 이동(Pan)은 상단 툴바에서 손모양 아이콘 클릭 후 사용하세요")
+                earliest_date = df_all.index.min().date()
+                latest_date = df_all.index.max().date()
 
+                st.subheader("📈 전체 주가 흐름 및 투자 구간 선택")
+
+                if period_option == "전체":
+                    # 전체 기간은 고정 구간이라 슬라이더가 필요 없습니다.
+                    start_date, end_date = earliest_date, latest_date
+                    st.caption("🖲️ 마우스 휠: 확대/축소 | '전체' 선택 시에는 상장일부터 최근까지 전 구간이 자동으로 계산됩니다.")
+                else:
+                    duration = timedelta(days=PERIOD_DAYS[period_option])
+                    min_start = earliest_date
+                    max_start = max(min_start, latest_date - duration)
+                    default_start = max_start  # 기본값: 최근 N년
+
+                    # 위젯이 그려지기 전에 "대기 중" 값 반영 (초기화 버튼용)
+                    if "_pending_slider_start" in st.session_state:
+                        st.session_state["drag_start_key"] = st.session_state.pop("_pending_slider_start")
+
+                    # ETF나 기간 프리셋이 바뀌면 슬라이더 위치를 기본값(최근 N년)으로 재설정
+                    if (
+                        "drag_start_key" not in st.session_state
+                        or st.session_state.get("_slider_ticker") != ticker
+                        or st.session_state.get("_slider_period") != period_option
+                    ):
+                        st.session_state["drag_start_key"] = default_start
+                        st.session_state["_slider_ticker"] = ticker
+                        st.session_state["_slider_period"] = period_option
+
+                    # 데이터 범위가 바뀌어 슬라이더 값이 범위를 벗어나면 보정
+                    cur_val = st.session_state["drag_start_key"]
+                    if cur_val < min_start or cur_val > max_start:
+                        st.session_state["drag_start_key"] = max(min_start, min(cur_val, max_start))
+
+                    st.caption(f"🎚️ **{period_option} 고정 구간을 아래 슬라이더로 좌우로 옮겨보세요** (매수 시점이 이동합니다) | 🖲️ 차트 마우스 휠: 확대/축소")
+
+                    col_slider, col_reset = st.columns([5, 1])
+                    with col_slider:
+                        start_date = st.slider(
+                            "매수 시점",
+                            min_value=min_start,
+                            max_value=max_start,
+                            key="drag_start_key",
+                            format="YYYY-MM-DD",
+                            label_visibility="collapsed",
+                        )
+                    with col_reset:
+                        if st.button("↩️ 최근 기간", use_container_width=True):
+                            st.session_state["_pending_slider_start"] = default_start
+                            st.rerun()
+
+                    end_date = start_date + duration
+
+                st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date}  ({(end_date - start_date).days:,}일)")
+
+                # --- 차트 ---
                 df_all_reset = df_all.reset_index()
                 date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
 
                 fig = px.line(df_all_reset, x=date_col, y="Close", title="전체 기간 주가 추이")
 
-                # 현재 선택된 투자 구간 하이라이트
                 fig.add_vrect(
                     x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date),
                     fillcolor="blue", opacity=0.15, layer="below", line_width=0,
@@ -149,46 +170,15 @@ if ticker:
                     xaxis_title="날짜",
                     yaxis_title="종가 (원)",
                     hovermode="x unified",
-                    dragmode="select",  # 드래그 = 구간 선택(Box Select)
+                    dragmode="pan",
                 )
 
-                chart_event = st.plotly_chart(
+                st.plotly_chart(
                     fig,
                     use_container_width=True,
-                    key="price_chart",
-                    on_select="rerun",
-                    selection_mode="box",
-                    config={
-                        "scrollZoom": True,      # 마우스 휠로 확대/축소
-                        "displayModeBar": True,  # 상단 툴바(Pan/Zoom/Select 전환) 표시
-                    }
+                    config={"scrollZoom": True, "displayModeBar": True},
                 )
 
-                # 드래그로 새 구간을 선택했으면 시작일/종료일 갱신 후 재계산
-                # (Plotly 박스 선택 결과 스키마가 버전에 따라 {"x":[x0,x1]} 또는 {"x0":.., "x1":..} 로 달라질 수 있어 둘 다 대응)
-                box_sel = []
-                if chart_event and chart_event.get("selection"):
-                    box_sel = chart_event["selection"].get("box", [])
-
-                new_start = new_end = None
-                if box_sel:
-                    b = box_sel[0]
-                    if "x" in b and b["x"] is not None:
-                        x0, x1 = b["x"][0], b["x"][1]
-                        new_start, new_end = pd.to_datetime(x0).date(), pd.to_datetime(x1).date()
-                    elif "x0" in b and "x1" in b:
-                        new_start = pd.to_datetime(b["x0"]).date()
-                        new_end = pd.to_datetime(b["x1"]).date()
-
-                if new_start and new_end and new_start != new_end and (new_start, new_end) != (start_date, end_date):
-                    # 주의: start_date_key/end_date_key는 이미 위에서 date_input 위젯으로 그려졌기 때문에
-                    # 이 시점에는 직접 수정할 수 없습니다. 대신 "대기 범위"에 저장해두고 재실행하면,
-                    # 다음 실행에서 위젯이 그려지기 전에(스크립트 최상단) 반영됩니다.
-                    st.session_state["_pending_range"] = (min(new_start, new_end), max(new_start, new_end))
-                    st.session_state["_prev_period_option"] = period_option  # 프리셋으로 되돌아가지 않도록 동기화
-                    st.rerun()
-
-                st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date}  ({(end_date - start_date).days:,}일)")
                 st.divider()
 
                 # 선택된 구간으로 데이터 슬라이싱

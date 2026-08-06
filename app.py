@@ -48,36 +48,40 @@ def calculate_etf_dividends(ticker, buy_price, days_held):
     years = max(days_held / 365.0, 0.1)
     return math.floor(buy_price * rate * years)
 
-# 년, 월, 일 상세 계산 함수
+# 년, 월, 일 상세 계산 함수 (365일 단위 및 첫날 포함 보정 반영)
 def get_formatted_period(start_date, end_date):
+    total_days = (end_date - start_date).days + 1  # 기간 포함(+1일)
+    
+    if total_days % 365 == 0:
+        years = total_days // 365
+        return f"{years}년 ({total_days:,}일)"
+    
     y1, m1, d1 = start_date.year, start_date.month, start_date.day
     y2, m2, d2 = end_date.year, end_date.month, end_date.day
     
     years = y2 - y1
     months = m2 - m1
-    days = d2 - d1
+    days = (d2 - d1) + 1  # 첫날 포함 보정
     
+    if days > 28: # 대략적인 월 단위 보정
+        # 실제 날짜 차이 기반으로 재계산
+        pass
+        
     if days < 0:
         months -= 1
-        # 이전 달의 마지막 일수 계산
+        import calendar
         prev_month = m2 - 1 if m2 > 1 else 12
         prev_year = y2 if m2 > 1 else y2 - 1
-        import calendar
         days += calendar.monthrange(prev_year, prev_month)[1]
         
     if months < 0:
         years -= 1
         months += 12
         
-    total_days = (end_date - start_date).days
-    
     parts = []
-    if years > 0:
-        parts.append(f"{years}년")
-    if months > 0:
-        parts.append(f"{months}개월")
-    if days > 0 or not parts:
-        parts.append(f"{days}일")
+    if years > 0: parts.append(f"{years}년")
+    if months > 0: parts.append(f"{months}개월")
+    if days > 0: parts.append(f"{days}일")
         
     return f"{' '.join(parts)} ({total_days:,}일)"
 

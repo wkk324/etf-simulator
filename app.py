@@ -76,16 +76,17 @@ if ticker:
             start_date = st.slider("매수 시점", min_value=earliest_date, max_value=max(earliest_date, latest_date - duration), value=max(earliest_date, latest_date - duration))
             end_date = start_date + duration
 
-        # 차트 출력 (휠 줌 적용)
+        # 차트 출력
         df_all_reset = df_all.reset_index()
         fig = px.line(df_all_reset, x="Date", y="Close", labels={"Close": "종가", "Date": "날짜"})
         fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date), fillcolor="blue", opacity=0.15, layer="below", line_width=0)
         
-        # [핵심] fixedrange=False로 설정하여 휠 줌 허용
+        # [핵심] dragmode="pan" 설정으로 드래그 시 이동만 가능하게 변경
         fig.update_layout(
             xaxis=dict(tickformat="%Y-%m-%d", fixedrange=False), 
             yaxis=dict(tickformat=",d", fixedrange=False), 
-            hovermode="x unified"
+            hovermode="x unified",
+            dragmode="pan" 
         )
         fig.update_traces(hovertemplate="날짜: %{x|%Y-%m-%d}<br>종가: %{y:,.0f}원")
         
@@ -125,4 +126,3 @@ if ticker:
                 st.error("금융소득종합과세 대상일 수 있습니다.")
             else:
                 st.success("원천징수 분리과세 구간입니다.")
-                

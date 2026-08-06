@@ -151,20 +151,19 @@ if ticker:
             price_diff_pct = (price_diff / buy_price) * 100  # 주당 수익률(%)
             
             quantity = math.floor(investment_amount / buy_price)
-            actual_invested = quantity * buy_price  # 최소 매수 시 평가금액 (실제 주식 매수 투입금)
+            actual_invested = quantity * buy_price  # 매수 평가금액 (실제 주식 매수 투입금)
             total_eval = (quantity * sell_price) + (investment_amount - actual_invested)
             eval_profit = total_eval - investment_amount
-            eval_profit_pct = (eval_profit / investment_amount) * 100  # 총 평가금액 수익률(%)
+            eval_profit_pct = (eval_profit / investment_amount) * 100  # 매도 평가금액 수익률(%)
             
             st.subheader(f"📌 {selected_etf_label} 시뮬레이션 결과")
             
-            # 순서 변경: [매수 주식수] -> [매수 시점 주가] -> [매도 시점 주가(+상승금액/수익률)] -> [최소 매수시 평가금액] -> [최종 평가금액(+평가손익/수익률)]
             col1, col2, col3, col4, col5 = st.columns(5)
             col1.metric("매수 주식수", f"{quantity:,} 주")
             col2.metric("매수 시점 주가", f"{buy_price:,.0f} 원")
             col3.metric("매도 시점 주가", f"{sell_price:,.0f} 원", delta=f"{price_diff:,.0f} 원 ({price_diff_pct:.2f}%)")
-            col4.metric("최소 매수시 평가금액", f"{actual_invested:,.0f} 원")
-            col5.metric("최종 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원 ({eval_profit_pct:.2f}%)")
+            col4.metric("매수 평가금액", f"{actual_invested:,.0f} 원")
+            col5.metric("매도 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원 ({eval_profit_pct:.2f}%)")
             
             total_dps = calculate_etf_dividends(ticker, buy_price, (end_date - start_date).days)
             total_div_gross = quantity * total_dps

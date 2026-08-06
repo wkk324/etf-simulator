@@ -15,7 +15,7 @@ st.divider()
 # --- 데이터 준비 (리스트 기반 추천 ETF 최상단 고정) ---
 @st.cache_data(ttl=3600)
 def get_etf_data(sort_by):
-    # 1. 무조건 맨 위에 고정할 추천 ETF 목록 (라벨: 코드)
+    # 무조건 맨 위에 고정할 추천 ETF 목록 (라벨: 코드)
     recommended_list = [
         ("ACE 미국배당다우존스 (402970)", "402970"),
         ("KODEX 200 (069500)", "069500"),
@@ -43,10 +43,7 @@ def get_etf_data(sort_by):
     except:
         pass
         
-    # 리스트를 순서대로 합치기 (추천 목록이 무조건 맨 위!)
     final_list = recommended_list + other_list
-    
-    # 딕셔너리로 변환 (Streamlit selectbox 호환용)
     return {label: code for label, code in final_list}
 
 @st.cache_data
@@ -63,6 +60,14 @@ def calculate_etf_dividends(ticker, buy_price, days_held):
     rate = DIVIDEND_RATES.get(ticker, 0.020)
     years = max(days_held / 365.0, 0.1)
     return math.floor(buy_price * rate * years)
+
+# 종합소득세율 (간이 계산용)
+def calculate_income_tax(total_income):
+    if total_income <= 14000000: return total_income * 0.06
+    elif total_income <= 50000000: return 840000 + (total_income - 14000000) * 0.15
+    elif total_income <= 88000000: return 6240000 + (total_income - 50000000) * 0.24
+    elif total_income <= 150000000: return 15360000 + (total_income - 88000000) * 0.35
+    else: return 37060000 + (total_income - 150000000) * 0.38
 
 # --- 사이드바 ---
 st.sidebar.header("📋 이번 비교 조건")
@@ -154,12 +159,26 @@ if ticker:
             col2.metric("매수 시점 주가", f"{buy_price:,.0f} 원")
             col3.metric("최종 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원")
             
+            # 배당 및 세금 계산 상세
             total_dps = calculate_etf_dividends(ticker, buy_price, (end_date - start_date).days)
             total_div_gross = quantity * total_dps
+            combined_income = other_income + total_div_gross
+            
             st.divider()
             st.subheader("⚖️ 세금 및 건강보험료 상세")
             st.info(f"예상 배당 수익(세전): {total_div_gross:,.0f} 원")
-            if (other_income + total_div_gross) > 20000000:
-                st.error("금융소득종합과세 대상일 수 있습니다.")
+            
+            if combined_income > 20000000:
+                excess_income = combined_income - 20000000
+                est_tax = calculate_income_tax(combined_income)
+                
+                st.error("⚠️ 금융소득종합과세 대상입니다.")
+                st.write(- f"**합산 금융소득:** {combined_income:,.0f} 원")
+                st.write(- f"**종합과세 적용 대상액:** {excess_income:,.0f} 원")
+                st.write(- f"**예상 추가 소득세(지방세 별도):** 약 {est_tax:,.0f} 원")
+                st.caption("※ 실제 세액은 기본공제 및 기타 소득 환경에 따라 크게 달라질 수 있습니다.")
             else:
+                tax_154 = total_div_gross * 0.154
                 st.success("원천징수 분리과세 구간입니다.")
+                st.write(- f"**원천징수 예상 세액(15.4%):** {tax_154:,.0f} 원")
+                st.write(- f"**세후 예상 수령액:** {total_div_gross - tax_154:,.0f} 원")

@@ -74,7 +74,6 @@ etf_dict = get_etf_data(sort_option)
 selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택", options=list(etf_dict.keys()))
 ticker = etf_dict[selected_etf_label]
 
-# 투자금 옵션 (1억, 3억, 5억, 10억 + 기타 직접 입력)
 investment_option = st.sidebar.radio("투자금 선택", ["1억", "3억", "5억", "10억", "기타"], index=0, horizontal=True)
 
 if investment_option == "1억":
@@ -147,15 +146,23 @@ if ticker:
         df = df_all.loc[mask]
         if not df.empty:
             buy_price = df.iloc[0]["Close"]
+            sell_price = df.iloc[-1]["Close"]  # 매도(보유 종료) 시점 주가
+            price_diff = sell_price - buy_price  # 주당 오른 금액
+            price_diff_pct = (price_diff / buy_price) * 100  # 수익률(%)
+            
             quantity = math.floor(investment_amount / buy_price)
-            total_eval = (quantity * df.iloc[-1]["Close"]) + (investment_amount - (quantity * buy_price))
+            total_eval = (quantity * sell_price) + (investment_amount - (quantity * buy_price))
             eval_profit = total_eval - investment_amount
             
             st.subheader(f"📌 {selected_etf_label} 시뮬레이션 결과")
-            col1, col2, col3 = st.columns(3)
+            
+            # 지표 칸을 5개로 확장
+            col1, col2, col3, col4, col5 = st.columns(5)
             col1.metric("매수 주식수", f"{quantity:,} 주")
             col2.metric("매수 시점 주가", f"{buy_price:,.0f} 원")
-            col3.metric("최종 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원")
+            col3.metric("매도 시점 주가", f"{sell_price:,.0f} 원")
+            col4.metric("주당 상승 금액", f"{price_diff:,.0f} 원", delta=f"{price_diff_pct:.2f}%")
+            col5.metric("최종 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원")
             
             total_dps = calculate_etf_dividends(ticker, buy_price, (end_date - start_date).days)
             total_div_gross = quantity * total_dps

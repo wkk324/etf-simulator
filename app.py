@@ -79,7 +79,7 @@ if ticker:
             start_date = st.slider("매수 시점", min_value=earliest_date, max_value=max(earliest_date, latest_date - duration), value=max(earliest_date, latest_date - duration))
             end_date = start_date + duration
 
-        # 차트 출력 (선 차트 vs 캔들 차트 정상 분기)
+        # 차트 출력
         df_all_reset = df_all.reset_index()
         date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
 
@@ -94,13 +94,12 @@ if ticker:
                 low=df_all_reset['Low'],
                 close=df_all_reset['Close'],
                 increasing_line_color='red',
-                decreasing_line_color='blue'
+                decreasing_line_color='blue',
+                hovertemplate="날짜: %{x|%Y-%m-%d}<br>시가: %{open:,.0f}원<br>고가: %{high:,.0f}원<br>저가: %{low:,.0f}원<br>종가: %{close:,.0f}원<extra></extra>"
             )])
 
-        # 공통 레이아웃 설정
+        # 레이아웃 설정
         fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date), fillcolor="blue", opacity=0.15, layer="below", line_width=0)
-        
-        # [핵심 수정] xaxis_rangeslider_visible=False 를 추가하여 아래에 생기던 이상한 미니 차트 제거
         fig.update_layout(
             xaxis=dict(tickformat="%Y-%m-%d", fixedrange=False), 
             yaxis=dict(tickformat=",d", fixedrange=False), 
@@ -112,11 +111,7 @@ if ticker:
         st.plotly_chart(
             fig, 
             use_container_width=True, 
-            config={
-                "scrollZoom": True, 
-                "displayModeBar": True,
-                "modeBarButtonsToRemove": ["lasso2d", "select2d"]
-            }
+            config={"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]}
         )
 
         # 계산 결과
@@ -128,14 +123,12 @@ if ticker:
             total_eval = (quantity * df.iloc[-1]["Close"]) + (investment_amount - (quantity * buy_price))
             eval_profit = total_eval - investment_amount
             
-            # 성과 지표
             st.subheader(f"📌 {selected_etf_label} 시뮬레이션 결과")
             col1, col2, col3 = st.columns(3)
             col1.metric("매수 주식수", f"{quantity:,} 주")
             col2.metric("매수 시점 주가", f"{buy_price:,.0f} 원")
             col3.metric("최종 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원")
             
-            # 세금/건보료 계산
             total_dps = calculate_etf_dividends(ticker, buy_price, (end_date - start_date).days)
             total_div_gross = quantity * total_dps
             st.divider()

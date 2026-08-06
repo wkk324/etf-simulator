@@ -61,7 +61,7 @@ etf_options = list(etf_dict.keys())
 # --- 사이드바 ---
 st.sidebar.header("📋 이번 비교 조건")
 
-# 1. 추천 ETF 퀵 선택 버튼 (요청 기능)
+# 1. 추천 ETF 퀵 선택 버튼
 st.sidebar.markdown("**💡 테마별 추천 ETF 퀵 선택**")
 quick_etf = st.sidebar.radio(
     "추천 ETF",
@@ -76,7 +76,6 @@ quick_etf = st.sidebar.radio(
 
 default_index = 0
 if "초고배당" in quick_etf:
-    # 459580 선택 시도
     for idx, opt in enumerate(etf_options):
         if "459580" in opt:
             default_index = idx
@@ -100,19 +99,16 @@ selected_etf_label = st.sidebar.selectbox(
 
 ticker = etf_dict[selected_etf_label]
 
-# 2. 투자금 선택
+# 2. 투자금 선택 (1억, 3억, 5억, 10억으로 정돈)
 st.sidebar.markdown("**투자금**")
 quick_money = st.sidebar.radio(
     "투자금 선택",
     ["1억", "3억", "5억", "10억"],
-    index=5,
     horizontal=True,
     label_visibility="collapsed",
 )
 
 money_map = {
-    "1천만": 10000000,
-    "3천만": 30000000,
     "1억": 100000000,
     "3억": 300000000,
     "5억": 500000000,
@@ -126,7 +122,7 @@ investment_amount = st.sidebar.number_input(
     format="%d",
 )
 
-# 3. 투자 기간 선택
+# 3. 투자 기간 선택 (1년, 3년, 5년, 10년, 전체)
 st.sidebar.markdown("**투자 기간**")
 period_option = st.sidebar.radio(
     "기간 선택",
@@ -141,6 +137,10 @@ if period_option == "1년":
     calc_start = today - timedelta(days=365)
 elif period_option == "3년":
     calc_start = today - timedelta(days=365 * 3)
+elif period_option == "5년":
+    calc_start = today - timedelta(days=365 * 5)
+elif period_option == "10년":
+    calc_start = today - timedelta(days=365 * 10)
 else:
     calc_start = datetime(2010, 1, 1)
 
@@ -211,16 +211,14 @@ if ticker:
                 total_financial_income = other_income + total_div_gross
 
                 # --- 1. 금융소득종합과세 예상 추가 세액 산출 ---
-                # 2,000만원 초과분에 대해 일반 소득세율(지방세 포함 26.4% 구간 가산 가정 시 약 +11%p 추정)
                 excess_global_income = max(
                     0, total_financial_income - 20000000
                 )
                 est_extra_tax = math.floor(
                     excess_global_income * 0.11
-                )  # 원천징수 15.4% 대비 종합과세 시 추가 세부담 추정액
+                )
 
                 # --- 2. 건강보험료 연간 추가 부과액 산출 ---
-                # 지역가입자: 1,000만원 초과분에 대해 건보료율(7.09%) + 장기요양(12.95%) ≈ 약 8.0% 산정
                 if (
                     insurance_type == "지역가입자"
                     and total_financial_income > 10000000
@@ -251,7 +249,7 @@ if ticker:
 
                 st.divider()
 
-                # --- 세금 및 건보료 상세 계산 결과 박스 (요청 기능) ---
+                # --- 세금 및 건보료 상세 계산 결과 박스 ---
                 st.subheader("⚖️ 세금 및 건강보험료 추가 부담액 상세")
 
                 col_a, col_b = st.columns(2)

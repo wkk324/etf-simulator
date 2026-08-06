@@ -27,6 +27,7 @@ def get_etf_data(sort_by):
         df_etf = fdr.StockListing("ETF/KR")
         if not df_etf.empty:
             df_etf['Symbol'] = df_etf['Symbol'].astype(str).str.zfill(6)
+            
             rec_symbols = [item[1] for item in recommended_list]
             df_etf = df_etf[~df_etf['Symbol'].isin(rec_symbols)]
             
@@ -68,6 +69,7 @@ def calculate_income_tax(total_income):
 st.sidebar.header("📋 이번 비교 조건")
 
 sort_option = st.sidebar.radio("ETF 목록 정렬 방식", ["가나다 이름순", "종목 코드순"], index=0, horizontal=True)
+
 etf_dict = get_etf_data(sort_option)
 selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택", options=list(etf_dict.keys()))
 ticker = etf_dict[selected_etf_label]
@@ -88,15 +90,15 @@ else:
 st.sidebar.markdown("**차트 형태 선택**")
 chart_type = st.sidebar.radio("차트 종류", ["선 차트 (Line)", "캔들 차트 (Candle)"], index=0, horizontal=True)
 
-period_mode = st.sidebar.radio("기간 설정 방식", ["고정 기간 통째로 이동", "자유 범위 지정", "직접 날짜 지정"], index=0, horizontal=True)
+period_mode = st.sidebar.radio("방식 선택", ["기간 범위 자유 선택", "고정 기간 이동 (슬라이더)", "직접 날짜 지정"], index=0, horizontal=True)
 
-if period_mode == "고정 기간 통째로 이동":
-    fixed_period_label = st.sidebar.selectbox("고정할 투자 기간", ["1년", "3년", "5년", "10년"], index=1)
-    period_option = "고정이동"
-elif period_mode == "자유 범위 지정":
-    period_option = "자유범위"
-else:
+if period_mode == "직접 날짜 지정":
     period_option = "직접지정"
+elif period_mode == "고정 기간 이동 (슬라이더)":
+    period_option = "고정기간이동"
+    fixed_duration_label = st.sidebar.selectbox("고정할 투자 기간 선택", ["1년", "3년", "5년", "10년"], index=1)
+else:
+    period_option = st.sidebar.radio("기본 기간 선택", ["1년", "3년", "5년", "10년", "전체"], index=1, horizontal=True)
 
 insurance_type = st.sidebar.radio("건강보험 가입 유형", ["지역가입자", "직장가입자"], index=0, horizontal=True)
 income_map = {"없음": 0, "3천만": 30000000, "5천만": 50000000, "7천만": 70000000, "1억": 100000000}
@@ -112,26 +114,30 @@ if ticker:
             col_d1, col_d2 = st.columns(2)
             start_date = col_d1.date_input("매수일", value=max(earliest_date, latest_date - timedelta(days=365*3)), min_value=earliest_date, max_value=latest_date)
             end_date = col_d2.date_input("매도일", value=latest_date, min_value=earliest_date, max_value=latest_date)
-        elif period_option == "고정이동":
-            duration_days = PERIOD_DAYS[fixed_period_label]
+        elif period_option == "전체":
+            start_date, end_date = earliest_date, latest_date
+        elif period_option == "고정기간이동":
+            duration_days = PERIOD_DAYS[fixed_duration_label]
             max_start = max(earliest_date, latest_date - timedelta(days=duration_days))
             
-            # 슬라이더로 매수 시점(시작일)만 움직이면, 종료일은 기간만큼 자동 계산되어 덩어리째 이동
+            # 시작일만 슬라이더로 조절하고, 종료일은 선택된 기간만큼 자동으로 계산
             start_date = st.slider(
-                f"📅 {fixed_period_label} 기간 통째로 이동 (매수 시점 조절)",
+                f"📅 {fixed_duration_label} 기간 이동 (매수 시점 조절)",
                 min_value=earliest_date,
                 max_value=max_start,
-                value=max_start,
+                value=max(earliest_date, latest_date - timedelta(days=duration_days)),
                 format="YYYY-MM-DD"
             )
             end_date = start_date + timedelta(days=duration_days)
+            # 만약 데이터의 마지막 날짜를 넘어가면 보정
             if end_date > latest_date:
                 end_date = latest_date
         else:
-            duration = timedelta(days=365 * 3)
+            duration = timedelta(days=PERIOD_DAYS[period_option])
             default_start = max(earliest_date, latest_date - duration)
+            
             date_range = st.slider(
-                "📅 매수 및 매도 시점 범위 선택",
+                "📅 매수 시점 및 매도 시점 선택 (범위)",
                 min_value=earliest_date,
                 max_value=latest_date,
                 value=(default_start, latest_date),
@@ -139,12 +145,12 @@ if ticker:
             )
             start_date, end_date = date_range
 
-        # 선택된 기간 안내
+        # 선택된 기간 계산 및 출력
         holding_days = (end_date - start_date).days
         holding_years = holding_days / 365.0
         st.info(f"📍 **선택된 투자 기간:** {start_date} ~ {end_date} (총 **{holding_days:,}일** / 약 **{holding_years:.1f}년** 보유)")
 
-        # 차트 출력 (주황색 하이라이트 적용)
+        # 차트 출력
         df_all_reset = df_all.reset_index()
         date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
 
@@ -163,7 +169,7 @@ if ticker:
                 hovertemplate="날짜: %{x|%Y-%m-%d}<br>시가: %{open:,.0f}원<br>고가: %{high:,.0f}원<br>저가: %{low:,.0f}원<br>종가: %{close:,.0f}원<extra></extra>"
             )])
 
-        fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date), fillcolor="orange", opacity=0.25, layer="below", line_width=0)
+        fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date), fillcolor="blue", opacity=0.15, layer="below", line_width=0)
         fig.update_layout(xaxis=dict(tickformat="%Y-%m-%d", fixedrange=False), yaxis=dict(tickformat=",d", fixedrange=False), xaxis_rangeslider_visible=False, hovermode="x unified", dragmode="pan")
         
         st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
@@ -203,7 +209,7 @@ if ticker:
             if combined_income > 20000000:
                 excess_income = combined_income - 20000000
                 est_tax_base = calculate_income_tax(combined_income)
-                est_tax_total = est_tax_base * 1.1  # 지방세(10%) 포함
+                est_tax_total = est_tax_base * 1.1  # 지방세(10%) 포함 총 추가 세액
                 net_dividend = total_div_gross - est_tax_total  
                 
                 st.error("⚠️ 금융소득종합과세 대상입니다.")

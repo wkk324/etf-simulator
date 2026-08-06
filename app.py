@@ -8,7 +8,7 @@ import streamlit as st
 
 st.set_page_config(page_title="한국 ETF 분배금 내역·세금 계산", layout="wide")
 
-st.title("🏦 한국 ETF 분배금 내역·세금 계산")
+st.title("🏦 한국 ETF 분배금 내역·세금 계산 (검색 기능 포함)")
 st.caption("과거 데이터 기반 투자 시뮬레이션 및 분배금·세금 정산 결과입니다.")
 st.divider()
 
@@ -38,8 +38,7 @@ def get_etf_data(sort_by):
     except:
         pass
         
-    final_list = recommended_list + other_list
-    return {label: code for label, code in final_list}
+    return {label: code for label, code in (recommended_list + other_list)}
 
 @st.cache_data
 def get_price_history(ticker):
@@ -67,21 +66,22 @@ def calculate_income_tax(total_income):
 st.sidebar.header("📋 이번 비교 조건")
 sort_option = st.sidebar.radio("ETF 목록 정렬 방식", ["가나다 이름순", "종목 코드순"], index=0, horizontal=True)
 
-# ETF 데이터 로드
 etf_dict = get_etf_data(sort_option)
 
-# 🔍 [명확하게 추가된 검색창]
-search_query = st.sidebar.text_input("🔍 ETF 이름/코드 직접 검색", placeholder="예: 미국배당 또는 402970")
+# 🔍 명확한 검색창 추가
+keyword = st.sidebar.text_input("🔍 ETF 이름/코드 검색", placeholder="예: 미국배당 또는 402970")
 
-if search_query:
-    filtered_dict = {k: v for k, v in etf_dict.items() if search_query.lower() in k.lower()}
-    options = list(filtered_dict.keys()) if filtered_dict else list(etf_dict.keys())
-    if not filtered_dict:
-        st.sidebar.warning("검색 결과가 없어 전체 목록을 표시합니다.")
+if keyword:
+    filtered_dict = {k: v for k, v in etf_dict.items() if keyword.lower() in k.lower()}
+    if filtered_dict:
+        options = list(filtered_dict.keys())
+    else:
+        st.sidebar.warning("검색 결과가 없습니다.")
+        options = list(etf_dict.keys())
 else:
     options = list(etf_dict.keys())
 
-selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 선택", options=options)
+selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택", options=options)
 ticker = etf_dict[selected_etf_label]
 
 investment_option = st.sidebar.radio("투자금 선택", ["1억", "3억", "5억", "10억", "기타"], index=0, horizontal=True)

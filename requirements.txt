@@ -1,3 +1,6 @@
 streamlit
-FinanceDataReader
 pandas
+numpy
+yfinance
+matplotlib
+plotly

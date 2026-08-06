@@ -15,7 +15,6 @@ st.divider()
 # --- 데이터 준비 (리스트 기반 추천 ETF 최상단 고정) ---
 @st.cache_data(ttl=3600)
 def get_etf_data(sort_by):
-    # 무조건 맨 위에 고정할 추천 ETF 목록 (라벨: 코드)
     recommended_list = [
         ("ACE 미국배당다우존스 (402970)", "402970"),
         ("KODEX 200 (069500)", "069500"),
@@ -29,11 +28,9 @@ def get_etf_data(sort_by):
         if not df_etf.empty:
             df_etf['Symbol'] = df_etf['Symbol'].astype(str).str.zfill(6)
             
-            # 추천 종목 중복 제거
             rec_symbols = [item[1] for item in recommended_list]
             df_etf = df_etf[~df_etf['Symbol'].isin(rec_symbols)]
             
-            # 정렬 적용
             if sort_by == "가나다 이름순":
                 df_etf = df_etf.sort_values(by="Name", ascending=True)
             else:
@@ -173,12 +170,12 @@ if ticker:
                 est_tax = calculate_income_tax(combined_income)
                 
                 st.error("⚠️ 금융소득종합과세 대상입니다.")
-                st.write(- f"**합산 금융소득:** {combined_income:,.0f} 원")
-                st.write(- f"**종합과세 적용 대상액:** {excess_income:,.0f} 원")
-                st.write(- f"**예상 추가 소득세(지방세 별도):** 약 {est_tax:,.0f} 원")
+                st.write(f"- **합산 금융소득:** {combined_income:,.0f} 원")
+                st.write(f"- **종합과세 적용 대상액:** {excess_income:,.0f} 원")
+                st.write(f"- **예상 추가 소득세(지방세 별도):** 약 {est_tax:,.0f} 원")
                 st.caption("※ 실제 세액은 기본공제 및 기타 소득 환경에 따라 크게 달라질 수 있습니다.")
             else:
                 tax_154 = total_div_gross * 0.154
                 st.success("원천징수 분리과세 구간입니다.")
-                st.write(- f"**원천징수 예상 세액(15.4%):** {tax_154:,.0f} 원")
-                st.write(- f"**세후 예상 수령액:** {total_div_gross - tax_154:,.0f} 원")
+                st.write(f"- **원천징수 예상 세액(15.4%):** {tax_154:,.0f} 원")
+                st.write(f"- **세후 예상 수령액:** {total_div_gross - tax_154:,.0f} 원")

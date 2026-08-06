@@ -12,9 +12,10 @@ st.title("🏦 한국 ETF 분배금 내역·세금 계산")
 st.caption("과거 데이터 기반 투자 시뮬레이션 및 분배금·세금 정산 결과입니다.")
 st.divider()
 
-# --- 데이터 준비 (추천 ETF 및 정렬 반영) ---
+# --- 데이터 준비 (추천 ETF 상단 배치 및 정렬 수정) ---
 @st.cache_data
 def get_etf_data(sort_by):
+    # 상단에 항상 고정으로 보여줄 추천 ETF
     recommended_etfs = {
         "ACE 미국배당다우존스 (402970)": "402970",
         "KODEX 200 (069500)": "069500",
@@ -30,9 +31,15 @@ def get_etf_data(sort_by):
         else:
             df_etf = df_etf.sort_values(by="Symbol", ascending=True)
             
-        etf_dict = {f"{row['Name']} ({row['Symbol']})": str(row['Symbol']) for _, row in df_etf.iterrows()}
+        # 전체 ETF 딕셔너리 생성 (추천 ETF에 있는 종목은 중복되므로 제외하고 생성)
+        rec_symbols = list(recommended_etfs.values())
+        etf_dict = {}
+        for _, row in df_etf.iterrows():
+            sym = str(row['Symbol'])
+            if sym not in rec_symbols:
+                etf_dict[f"{row['Name']} ({sym})"] = sym
         
-        # 추천 목록이 맨 앞에 오도록 병합
+        # 추천 목록을 맨 위에 오고, 나머지가 정렬된 상태로 붙도록 합치기
         final_dict = {**recommended_etfs, **etf_dict}
         return final_dict
     except:
@@ -56,8 +63,8 @@ def calculate_etf_dividends(ticker, buy_price, days_held):
 # --- 사이드바 ---
 st.sidebar.header("📋 이번 비교 조건")
 
-# 가나다 이름순을 기본값(index=1)으로 설정
-sort_option = st.sidebar.radio("ETF 목록 정렬 방식", ["종목 코드순", "가나다 이름순"], index=1, horizontal=True)
+# '가나다 이름순'이 기본값(index=0)으로 먼저 오도록 설정
+sort_option = st.sidebar.radio("ETF 목록 정렬 방식", ["가나다 이름순", "종목 코드순"], index=0, horizontal=True)
 
 etf_dict = get_etf_data(sort_option)
 selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택", options=list(etf_dict.keys()))

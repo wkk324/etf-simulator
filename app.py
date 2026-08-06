@@ -12,21 +12,16 @@ st.title("🏦 한국 ETF 분배금 내역·세금 계산")
 st.caption("과거 데이터 기반 투자 시뮬레이션 및 분배금·세금 정산 결과입니다.")
 st.divider()
 
-# --- 데이터 준비 (정렬 옵션 반영) ---
+# --- 데이터 준비 ---
 @st.cache_data
 def get_etf_data(sort_by):
     try:
         df_etf = fdr.StockListing("ETF/KR")
         
-        # 사용자가 선택한 정렬 기준에 따른 분기 처리
+        # 가나다 이름순 vs 종목 코드순 정렬
         if sort_by == "가나다 이름순":
             df_etf = df_etf.sort_values(by="Name", ascending=True)
-        elif sort_by == "상장일순 (최신순)":
-            if "ListingDate" in df_etf.columns:
-                df_etf = df_etf.sort_values(by="ListingDate", ascending=False)
-            else:
-                df_etf = df_etf.sort_values(by="Symbol", ascending=False)
-        else:  # 기본값 (종목 코드순)
+        else:
             df_etf = df_etf.sort_values(by="Symbol", ascending=True)
             
         etf_dict = {f"{row['Name']} ({row['Symbol']})": str(row['Symbol']) for _, row in df_etf.iterrows()}
@@ -57,8 +52,8 @@ def calculate_etf_dividends(ticker, buy_price, days_held):
 # --- 사이드바 ---
 st.sidebar.header("📋 이번 비교 조건")
 
-# [추가] ETF 목록 정렬 기준 선택 라디오 버튼
-sort_option = st.sidebar.radio("ETF 목록 정렬 방식", ["종목 코드순", "가나다 이름순", "상장일순 (최신순)"], index=0, horizontal=True)
+# 상장일순 옵션 제거 및 2가지 정렬 옵션만 제공
+sort_option = st.sidebar.radio("ETF 목록 정렬 방식", ["종목 코드순", "가나다 이름순"], index=0, horizontal=True)
 
 etf_dict = get_etf_data(sort_option)
 selected_etf_label = st.sidebar.selectbox("한국 상장 ETF 검색 및 선택", options=list(etf_dict.keys()))

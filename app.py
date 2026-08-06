@@ -93,168 +93,159 @@ other_income = income_map[quick_income]
 # --- 메인 연산 ---
 if ticker:
     with st.spinner(f"'{selected_etf_label}' 시세 데이터 로딩 중..."):
-        try:
-            df_all = get_price_history(ticker)
+        df_all = get_price_history(ticker)
 
-            if df_all.empty:
-                st.warning("시세 데이터가 존재하지 않습니다.")
+        if df_all.empty:
+            st.warning("시세 데이터가 존재하지 않습니다.")
+        else:
+            earliest_date = df_all.index.min().date()
+            latest_date = df_all.index.max().date()
+
+            st.subheader("📈 전체 주가 흐름 및 투자 구간 선택")
+
+            if period_option == "전체":
+                start_date, end_date = earliest_date, latest_date
+                st.caption("🖲️ '전체' 선택 시 상장일부터 최근까지 전 구간이 자동으로 계산됩니다.")
+            elif earliest_date + timedelta(days=PERIOD_DAYS[period_option]) >= latest_date:
+                start_date, end_date = earliest_date, latest_date
+                st.warning(
+                    f"⚠️ 선택하신 ETF의 데이터가 부족하여 전체 구간({earliest_date} ~ {latest_date})으로 계산합니다."
+                )
             else:
-                earliest_date = df_all.index.min().date()
-                latest_date = df_all.index.max().date()
+                duration = timedelta(days=PERIOD_DAYS[period_option])
+                min_start = earliest_date
+                max_start = max(min_start, latest_date - duration)
+                default_start = max_start
 
-                st.subheader("📈 전체 주가 흐름 및 투자 구간 선택")
+                if "_pending_slider_start" in st.session_state:
+                    st.session_state["drag_start_key"] = st.session_state.pop("_pending_slider_start")
 
-                if period_option == "전체":
-                    # 전체 기간은 고정 구간이라 슬라이더가 필요 없습니다.
-                    start_date, end_date = earliest_date, latest_date
-                    st.caption("🖲️ 마우스 휠: 확대/축소 | '전체' 선택 시에는 상장일부터 최근까지 전 구간이 자동으로 계산됩니다.")
-                elif earliest_date + timedelta(days=PERIOD_DAYS[period_option]) >= latest_date:
-                    # 선택한 기간 길이가 실제 보유 가능한 데이터 기간보다 깁니다 (예: 상장한 지 얼마 안 된 ETF)
-                    # → 슬라이더가 움직일 여유가 없으므로, 이동 없이 데이터가 존재하는 전체 구간을 그대로 사용합니다.
-                    start_date, end_date = earliest_date, latest_date
-                    st.warning(
-                        f"⚠️ 선택하신 ETF의 시세 데이터는 {earliest_date} 부터 시작해서, "
-                        f"'{period_option}' 구간을 옮길 만큼 데이터가 충분하지 않아요. "
-                        f"데이터가 있는 전체 구간({earliest_date} ~ {latest_date})으로 계산합니다."
+                if (
+                    "drag_start_key" not in st.session_state
+                    or st.session_state.get("_slider_ticker") != ticker
+                    or st.session_state.get("_slider_period") != period_option
+                ):
+                    st.session_state["drag_start_key"] = default_start
+                    st.session_state["_slider_ticker"] = ticker
+                    st.session_state["_slider_period"] = period_option
+
+                cur_val = st.session_state["drag_start_key"]
+                if cur_val < min_start or cur_val > max_start:
+                    st.session_state["drag_start_key"] = max(min_start, min(cur_val, max_start))
+
+                st.caption(f"🎚️ **{period_option} 고정 구간을 아래 슬라이더로 좌우로 옮겨보세요**")
+
+                col_slider, col_reset = st.columns([5, 1])
+                with col_slider:
+                    start_date = st.slider(
+                        "매수 시점",
+                        min_value=min_start,
+                        max_value=max_start,
+                        key="drag_start_key",
+                        format="YYYY-MM-DD",
+                        label_visibility="collapsed",
                     )
-                else:
-                    duration = timedelta(days=PERIOD_DAYS[period_option])
-                    min_start = earliest_date
-                    max_start = max(min_start, latest_date - duration)
-                    default_start = max_start  # 기본값: 최근 N년
+                with col_reset:
+                    if st.button("↩️ 최근 기간", use_container_width=True):
+                        st.session_state["_pending_slider_start"] = default_start
+                        st.rerun()
 
-                    # 위젯이 그려지기 전에 "대기 중" 값 반영 (초기화 버튼용)
-                    if "_pending_slider_start" in st.session_state:
-                        st.session_state["drag_start_key"] = st.session_state.pop("_pending_slider_start")
+                end_date = start_date + duration
 
-                    # ETF나 기간 프리셋이 바뀌면 슬라이더 위치를 기본값(최근 N년)으로 재설정
-                    if (
-                        "drag_start_key" not in st.session_state
-                        or st.session_state.get("_slider_ticker") != ticker
-                        or st.session_state.get("_slider_period") != period_option
-                    ):
-                        st.session_state["drag_start_key"] = default_start
-                        st.session_state["_slider_ticker"] = ticker
-                        st.session_state["_slider_period"] = period_option
+            st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date} ({(end_date - start_date).days:,}일)")
 
-                    # 데이터 범위가 바뀌어 슬라이더 값이 범위를 벗어나면 보정
-                    cur_val = st.session_state["drag_start_key"]
-                    if cur_val < min_start or cur_val > max_start:
-                        st.session_state["drag_start_key"] = max(min_start, min(cur_val, max_start))
+            # --- 차트 (항상 전체 기간을 보여주고 선택 구간만 하이라이트) ---
+            df_all_reset = df_all.reset_index()
+            date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
 
-                    st.caption(f"🎚️ **{period_option} 고정 구간을 아래 슬라이더로 좌우로 옮겨보세요** (매수 시점이 이동합니다) | 🖲️ 차트 마우스 휠: 확대/축소")
+            fig = px.line(df_all_reset, x=date_col, y="Close", title="전체 기간 주가 추이 (선택한 투자 구간 하이라이트)")
 
-                    col_slider, col_reset = st.columns([5, 1])
-                    with col_slider:
-                        start_date = st.slider(
-                            "매수 시점",
-                            min_value=min_start,
-                            max_value=max_start,
-                            key="drag_start_key",
-                            format="YYYY-MM-DD",
-                            label_visibility="collapsed",
-                        )
-                    with col_reset:
-                        if st.button("↩️ 최근 기간", use_container_width=True):
-                            st.session_state["_pending_slider_start"] = default_start
-                            st.rerun()
+            fig.add_vrect(
+                x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date),
+                fillcolor="blue", opacity=0.15, layer="below", line_width=0,
+                annotation_text="투자 구간", annotation_position="top left"
+            )
 
-                    end_date = start_date + duration
+            fig.update_layout(
+                xaxis_title="날짜",
+                yaxis_title="종가 (원)",
+                hovermode="x unified",
+                dragmode="pan",
+            )
 
-                st.info(f"📌 **현재 계산 구간**: {start_date} ~ {end_date}  ({(end_date - start_date).days:,}일)")
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={"scrollZoom": True, "displayModeBar": True},
+            )
 
-                # --- 차트 ---
-                df_all_reset = df_all.reset_index()
-                date_col = "Date" if "Date" in df_all_reset.columns else df_all_reset.columns[0]
+            st.divider()
 
-                fig = px.line(df_all_reset, x=date_col, y="Close", title="전체 기간 주가 추이")
+            # 선택된 구간으로 데이터 슬라이싱
+            mask = (df_all.index >= pd.Timestamp(start_date)) & (df_all.index <= pd.Timestamp(end_date))
+            df = df_all.loc[mask]
 
-                fig.add_vrect(
-                    x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date),
-                    fillcolor="blue", opacity=0.15, layer="below", line_width=0,
-                    annotation_text="투자 구간", annotation_position="top left"
-                )
+            if df.empty:
+                st.warning("선택하신 구간에 해당하는 시세 데이터가 없습니다. 구간을 다시 선택해주세요.")
+            else:
+                buy_price = df.iloc[0]["Close"]
+                quantity = math.floor(investment_amount / buy_price)
+                remaining_cash = investment_amount - (quantity * buy_price)
+                current_price = df.iloc[-1]["Close"]
+                total_eval = (quantity * current_price) + remaining_cash
 
-                fig.update_layout(
-                    xaxis_title="날짜",
-                    yaxis_title="종가 (원)",
-                    hovermode="x unified",
-                    dragmode="pan",
-                )
+                eval_profit = total_eval - investment_amount
+                days_held = (end_date - start_date).days
+                total_dps = calculate_etf_dividends(ticker, buy_price, days_held)
 
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True,
-                    config={"scrollZoom": True, "displayModeBar": True},
-                )
+                total_div_gross = quantity * total_dps
+                tax_base_154 = math.floor(total_div_gross * 0.154)
+                total_div_net = total_div_gross - tax_base_154
+
+                total_return = eval_profit + total_div_net
+                return_rate = (total_return / investment_amount) * 100
+
+                # --- 결과 출력 ---
+                st.subheader(f"📌 {selected_etf_label} 시뮬레이션 결과")
+
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("매수 주식수", f"{quantity:,} 주")
+                col2.metric("매수 시점 주가", f"{buy_price:,.0f} 원")
+                col3.metric("기간 종료 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원")
+                col4.metric("최종 수익 (분배금 포함)", f"{total_return:,.0f} 원", delta=f"{return_rate:.2f}%", help="평가 손익 + 세후 분배금 합계입니다.")
+
+                if eval_profit < 0:
+                    st.warning(f"⚠️ 주가가 매수 시점보다 {((current_price - buy_price)/buy_price)*100:.2f}% 변동했습니다. 하지만 분배금을 합산하면 실제 수익률은 {(total_return/investment_amount)*100:.2f}%가 됩니다.")
 
                 st.divider()
 
-                # 선택된 구간으로 데이터 슬라이싱
-                mask = (df_all.index >= pd.Timestamp(start_date)) & (df_all.index <= pd.Timestamp(end_date))
-                df = df_all.loc[mask]
+                # --- 세금 및 건보료 상세 계산 ---
+                total_financial_income = other_income + total_div_gross
+                excess_global_income = max(0, total_financial_income - 20000000)
+                est_extra_tax = math.floor(excess_global_income * 0.11)
 
-                if df.empty:
-                    st.warning("선택하신 구간에 해당하는 시세 데이터가 없습니다. 구간을 다시 선택해주세요.")
+                if insurance_type == "지역가입자" and total_financial_income > 10000000:
+                    excess_health_income = total_financial_income - 10000000
+                    est_extra_health_annual = math.floor(excess_health_income * 0.0801)
+                    est_extra_health_monthly = math.floor(est_extra_health_annual / 12)
                 else:
-                    buy_price = df.iloc[0]["Close"]
-                    quantity = math.floor(investment_amount / buy_price)
-                    remaining_cash = investment_amount - (quantity * buy_price)
-                    current_price = df.iloc[-1]["Close"]
-                    total_eval = (quantity * current_price) + remaining_cash
+                    est_extra_health_annual = 0
+                    est_extra_health_monthly = 0
 
-                    eval_profit = total_eval - investment_amount
-                    days_held = (end_date - start_date).days
-                    total_dps = calculate_etf_dividends(ticker, buy_price, days_held)
+                st.subheader("⚖️ 세금 및 건강보험료 추가 부담액 상세")
+                col_a, col_b = st.columns(2)
 
-                    total_div_gross = quantity * total_dps
-                    tax_base_154 = math.floor(total_div_gross * 0.154)
-                    total_div_net = total_div_gross - tax_base_154
-
-                    total_return = eval_profit + total_div_net
-                    return_rate = (total_return / investment_amount) * 100
-
-                    # --- 결과 출력 ---
-                    st.subheader(f"📌 {selected_etf_label} 시뮬레이션 결과")
-
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("매수 주식수", f"{quantity:,} 주")
-                    col2.metric("매수 시점 주가", f"{buy_price:,.0f} 원")
-                    col3.metric("현재 평가금액", f"{total_eval:,.0f} 원", delta=f"{eval_profit:,.0f} 원")
-                    col4.metric("최종 수익 (분배금 포함)", f"{total_return:,.0f} 원", delta=f"{return_rate:.2f}%", help="평가 손익 + 세후 분배금 합계입니다.")
-
-                    if eval_profit < 0:
-                        st.warning(f"⚠️ 주가가 매수 시점보다 {((current_price - buy_price)/buy_price)*100:.2f}% 하락했습니다. 하지만 분배금을 합산하면 실제 손실액은 {(total_return/investment_amount)*100:.2f}%로 완화됩니다.")
-
-                    st.divider()
-
-                    # --- 세금 및 건보료 상세 계산 ---
-                    total_financial_income = other_income + total_div_gross
-                    excess_global_income = max(0, total_financial_income - 20000000)
-                    est_extra_tax = math.floor(excess_global_income * 0.11)
-
-                    if insurance_type == "지역가입자" and total_financial_income > 10000000:
-                        excess_health_income = total_financial_income - 10000000
-                        est_extra_health_annual = math.floor(excess_health_income * 0.0801)
-                        est_extra_health_monthly = math.floor(est_extra_health_annual / 12)
+                with col_a:
+                    if excess_global_income > 0:
+                        st.error(f"🚨 **금융소득종합과세 대상**\n* **총 금융소득**: {total_financial_income:,}원\n* 💰 **예상 추가 종합소득세**: **약 +{est_extra_tax:,} 원**")
                     else:
-                        est_extra_health_annual = 0
-                        est_extra_health_monthly = 0
+                        st.success(f"✅ **원천징수(15.4%) 분리과세 완료**\n* **총 금융소득**: {total_financial_income:,}원 (2,000만 원 이하)")
 
-                    st.subheader("⚖️ 세금 및 건강보험료 추가 부담액 상세")
-                    col_a, col_b = st.columns(2)
-
-                    with col_a:
-                        if excess_global_income > 0:
-                            st.error(f"🚨 **금융소득종합과세 대상**\n* **총 금융소득**: {total_financial_income:,}원\n* 💰 **예상 추가 종합소득세**: **약 +{est_extra_tax:,} 원**")
-                        else:
-                            st.success(f"✅ **원천징수(15.4%) 분리과세 완료**\n* **총 금융소득**: {total_financial_income:,}원 (2,000만 원 이하)")
-
-                    with col_b:
-                        if est_extra_health_annual > 0:
-                            st.warning(f"⚠️ **건강보험료 추가 부과 대상**\n* 🏥 **연간 추가 건보료**: **약 +{est_extra_health_annual:,} 원**\n* 📅 **월평균**: **약 +{est_extra_health_monthly:,} 원/월**")
-                        else:
-                            st.info("ℹ️ **건강보험료 추가 인상 없음**")
+                with col_b:
+                    if est_extra_health_annual > 0:
+                        st.warning(f"⚠️ **건강보험료 추가 부과 대상**\n* 🏥 **연간 추가 건보료**: **약 +{est_extra_health_annual:,} 원**\n* 📅 **월평균**: **약 +{est_extra_health_monthly:,} 원/월**")
+                    else:
+                        st.info("ℹ️ **건강보험료 추가 인상 없음**")
 
         except Exception as e:
             st.error("데이터 계산 중 오류가 발생했습니다.")

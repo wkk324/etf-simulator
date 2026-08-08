@@ -19,6 +19,27 @@ import streamlit as st
 
 st.set_page_config(page_title="ETF 분배금·세금 시뮬레이터", layout="wide")
 
+st.markdown("""
+<style>
+.block-container { padding-top: 4rem; padding-bottom: 1.5rem; max-width: 1200px; }
+h1 { font-size: 1.55rem !important; margin-bottom: 0.2rem !important; }
+h2 { font-size: 1.05rem !important; margin-top: 0.4rem !important; margin-bottom: 0.3rem !important; }
+h3 { font-size: 0.95rem !important; margin-top: 0.3rem !important; margin-bottom: 0.2rem !important; }
+p, li, .stCaption, [data-testid="stCaptionContainer"] { font-size: 0.92rem !important; }
+[data-testid="stMetricValue"] { font-size: 1.15rem !important; }
+[data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
+[data-testid="stMetricDelta"] { font-size: 0.8rem !important; }
+div[data-testid="stVerticalBlock"] { gap: 0.45rem !important; }
+hr { margin: 0.4rem 0 !important; }
+[data-testid="stDataFrame"] { font-size: 0.88rem !important; }
+section[data-testid="stSidebar"] .block-container { padding-top: 1.2rem; }
+section[data-testid="stSidebar"] label p { font-size: 0.9rem !important; }
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.9rem !important; }
+section[data-testid="stSidebar"] div[role="radiogroup"] label { padding: 0.15rem 0 !important; }
+section[data-testid="stSidebar"] hr { margin: 0.8rem 0 !important; }
+</style>
+""", unsafe_allow_html=True)
+
 # =========================================================
 # 상수 (2026년 기준)
 # =========================================================
@@ -65,6 +86,63 @@ DEFAULT_ETF_PARAMS = {
     "368590": (0.013, 1.00),
 }
 FALLBACK_PARAMS = (0.020, 1.00)
+
+RECOMMENDED_ETFS = [
+    ("ACE 미국배당다우존스", "402970"),
+    ("KODEX 200", "069500"),
+    ("KODEX 200타겟위클리커버드콜", "498400"),
+    ("TIGER 미국나스닥100", "133690"),
+    ("TIGER 미국배당+7%프리미엄다우존스", "459580"),
+]
+
+# ETF 브랜드(상품명 접두어) → 자산운용사. 브랜드명이 종목명 맨 앞에 붙는 국내 관행을 이용해 추정한다.
+BRAND_TO_ISSUER = {
+    "KODEX": "삼성자산운용",
+    "KOACT": "삼성액티브자산운용",
+    "TIGER": "미래에셋자산운용",
+    "TIMEFOLIO": "타임폴리오자산운용",
+    "RISE": "KB자산운용",
+    "ACE": "한국투자신탁운용",
+    "VITA": "한국투자밸류자산운용",
+    "SOL": "신한자산운용",
+    "WOORI": "우리자산운용",
+    "WON": "우리자산운용",
+    "마이티": "DB자산운용",
+    "UNICORN": "현대자산운용",
+    "마이다스": "마이다스에셋자산운용",
+    "MIDAS": "마이다스에셋자산운용",
+    "PLUS": "한화자산운용",
+    "DAISHIN343": "대신자산운용",
+    "HANARO": "NH-Amundi자산운용",
+    "에셋플러스": "에셋플러스자산운용",
+    "KOSEF": "키움자산운용",
+    "히어로즈": "키움자산운용",
+    "HEROES": "키움자산운용",
+    "KIWOOM": "키움자산운용",
+    "파워": "교보악사자산운용",
+    "1Q": "하나자산운용",
+    "IBK": "IBK자산운용",
+    "ITF": "IBK자산운용",
+    "TREX": "유리자산운용",
+    "HK": "흥국자산운용",
+    "BNK": "BNK자산운용",
+    "KCGI": "KCGI자산운용",
+    "TIME": "타임폴리오자산운용",
+    "TRUSTON": "트러스톤자산운용",
+    "FOCUS": "브이아이자산운용",
+    "DS": "DS자산운용",
+    "더제이": "더제이자산운용",
+    "아이엠에셋": "iM에셋자산운용",
+}
+
+
+def guess_issuer(name: str) -> str:
+    """종목명 앞부분의 브랜드로 자산운용사를 추정한다."""
+    upper = name.upper()
+    for brand, issuer in sorted(BRAND_TO_ISSUER.items(), key=lambda kv: -len(kv[0])):
+        if upper.startswith(brand.upper()):
+            return issuer
+    return "확인 필요"
 
 # 국내주식형(매매차익 비과세) 확정 종목
 DOMESTIC_EQUITY_CODES = {
@@ -315,8 +393,24 @@ etf_dict, load_error = get_etf_data(sort_option)
 if load_error:
     st.sidebar.warning(f"⚠️ 전체 ETF 목록 로딩 실패. 추천 종목만 표시합니다.\n\n({load_error})")
 
-selected_label = st.sidebar.selectbox("ETF 선택", options=list(etf_dict.keys()))
+code_to_label = {code: label for label, code in etf_dict.items()}
+
+st.sidebar.markdown("**⭐ 추천 ETF**")
+for name, code in RECOMMENDED_ETFS:
+    if code in code_to_label and st.sidebar.button(name, use_container_width=True, key=f"rec_{code}"):
+        st.session_state["etf_select"] = code_to_label[code]
+
+selected_label = st.sidebar.selectbox("ETF 선택", options=list(etf_dict.keys()), key="etf_select")
 ticker = etf_dict[selected_label]
+issuer = guess_issuer(selected_label)
+st.sidebar.caption(f"🏢 자산운용사: **{issuer}**" if issuer != "확인 필요"
+                   else "🏢 자산운용사: 브랜드 인식 실패 — 네이버 금융에서 확인하세요")
+st.sidebar.link_button(
+    "🔗 상품 상세정보 보기 (네이버 금융)",
+    f"https://finance.naver.com/item/main.naver?code={ticker}",
+    use_container_width=True,
+    help="선택한 ETF의 시세·기초지수·자산운용사 등 기본 정보를 새 탭에서 확인합니다. "
+         "운용보수·투자설명서 등 상세 자료는 자산운용사(KODEX/TIGER/ACE 등) 홈페이지를 확인하세요.")
 
 # --- 주가 데이터 성격 ---
 st.sidebar.divider()
@@ -338,6 +432,12 @@ type_choice = st.sidebar.radio(
     "유형",
     ["자동 추정", "국내주식형 (매매차익 비과세)", "기타 (매매차익 배당소득 과세)"],
     index=0,
+    help="**국내주식형**: 코스피·코스닥 등 국내 상장주식에 60% 이상 투자하는 ETF(예: KODEX 200). "
+         "매매차익은 비과세이고 분배금만 배당소득세 15.4%가 붙습니다.\n\n"
+         "**기타**: 해외주식·채권·원자재·통화·파생상품 등 위 조건에 안 맞는 나머지 ETF. "
+         "매매차익도 분배금과 똑같이 배당소득세 15.4%가 과세되며, 금융소득종합과세 대상이 될 수 있습니다.\n\n"
+         "**자동 추정**: ETF 이름의 키워드(미국·나스닥·채권·커버드콜 등)로 앱이 유형을 추측합니다. "
+         "이름만 보고 판단하므로 100% 정확하지 않을 수 있어, 애매하면 운용사 홈페이지에서 확인 후 직접 선택하세요.",
 )
 if type_choice == "자동 추정":
     etf_type = auto_type
@@ -352,8 +452,17 @@ st.sidebar.markdown("**💵 분배금 설정**")
 
 def_rate, def_tax_ratio = DEFAULT_ETF_PARAMS.get(ticker, FALLBACK_PARAMS)
 
-div_input_mode = st.sidebar.radio("입력 방식", ["연 분배율(%)", "월 주당 분배금(원)"],
-                                  index=0, horizontal=True)
+div_input_mode = st.sidebar.radio(
+    "입력 방식",
+    ["연 분배율(%)", "월 주당 분배금(원)"],
+    index=0, horizontal=True,
+    help="실제 분배금은 그 기간 펀드가 거둔 배당·이자·옵션프리미엄 수익에 따라 매번 달라지고, "
+         "이 앱은 실제 지급 내역을 갖고 있지 않아 아래 두 방식 중 하나로 **추정**합니다.\n\n"
+         "**연 분배율(%)**: 분배금이 주가에 비례한다고 가정(분배금 = 주가 × 연분배율). "
+         "배당주형 ETF(ACE 미국배당다우존스 등)처럼 '연 배당수익률 약 X%'로 공지되는 상품에 적합합니다.\n\n"
+         "**월 주당 분배금(원)**: 주가와 무관하게 매달 고정 금액을 지급한다고 가정. "
+         "위클리·월 커버드콜 ETF처럼 '월 목표 분배금 XXX원'을 타겟팅하는 상품에 적합합니다.\n\n"
+         "정확한 값은 운용사 홈페이지의 실제 월별 분배금 공지를 확인해 입력하세요.")
 if div_input_mode == "연 분배율(%)":
     div_rate = st.sidebar.number_input(
         "연 분배율 (%)", min_value=0.0, max_value=40.0,
@@ -370,7 +479,12 @@ div_taxable_ratio = st.sidebar.slider(
     "분배금 과표 반영률 (%)", 0, 100, int(def_tax_ratio * 100), step=1,
     help="분배금은 '과표증분'과 '실제 분배금' 중 작은 금액에 15.4%가 과세됩니다. "
          "커버드콜 ETF의 옵션 프리미엄은 과표에 잡히지 않는 경우가 많아 과표증분이 0에 가깝습니다. "
-         "운용사 분배금 공지의 '주당 과세표준액 증분'을 확인해 입력하세요.") / 100
+         "운용사 분배금 공지의 '주당 과세표준액 증분'을 확인해 입력하세요.\n\n"
+         "**과표증분이란?** 운용사가 시장 종가와 별도로 매일 산출·공시하는 '과세표준 기준가격(과표기준가)'이 "
+         "매수 시점부터 분배(또는 매도) 시점까지 오른 차액입니다. 과표기준가는 시장가격과 달리 "
+         "편입자산의 배당·이자·실현손익 등 세법상 과세 대상 소득만 누적 반영한 값이라, 실제 시세차익·분배금과는 "
+         "다를 수 있습니다. 세법은 투자자에게 유리하게 실제 이익과 과표증분 중 **작은 금액에만** 과세하도록 "
+         "정하고 있어, 시세는 많이 올라도 과표증분이 작으면 세금이 거의 안 붙을 수 있습니다.") / 100
 
 # --- 투자 방식 ---
 st.sidebar.divider()
@@ -520,7 +634,8 @@ fig.add_vrect(x0=pd.Timestamp(start_date), x1=pd.Timestamp(end_date),
               fillcolor="blue", opacity=0.15, layer="below", line_width=0)
 fig.update_layout(xaxis=dict(range=[earliest, latest], tickformat="%Y-%m-%d"),
                   yaxis=dict(tickformat=",d"), xaxis_rangeslider_visible=False,
-                  dragmode="pan", margin=dict(t=30, b=20))
+                  dragmode="pan", margin=dict(t=20, b=20), height=320,
+                  font=dict(size=11))
 st.plotly_chart(fig, use_container_width=True,
                 config={"scrollZoom": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
 
@@ -551,18 +666,18 @@ st.subheader(f"📌 {selected_label} 시뮬레이션 결과")
 badge_line = invest_mode_label + (" · 🔁 분배금 재투자" if reinvest_dividends else "")
 st.caption(badge_line)
 
-c = st.columns(5)
+gain_pct = (total_eval - total_cash_contributed) / total_cash_contributed * 100 if total_cash_contributed else 0.0
+
+c = st.columns(6)
 c[0].metric("최종 보유 주식 수", f"{quantity:,.0f} 주")
 c[1].metric("매수 주가 (최초)", f"{buy_price:,.0f} 원")
 c[2].metric("매도 주가", f"{sell_price:,.0f} 원",
             delta=f"{(sell_price - buy_price) / buy_price * 100:.2f}%")
 c[3].metric("누적 투자원금", f"{total_cash_contributed:,.0f} 원")
-gain_pct = (total_eval - total_cash_contributed) / total_cash_contributed * 100 if total_cash_contributed else 0.0
 c[4].metric("최종 평가금액", f"{total_eval:,.0f} 원",
             delta=f"{total_eval - total_cash_contributed:,.0f} 원 ({gain_pct:.2f}%)")
-
-st.metric("최대낙폭 (MDD)", f"-{mdd * 100:.2f}%",
-          help="보유 기간 중 평가금액 고점 대비 최대 하락폭입니다. 적립식 매수·분배금 재투자도 반영됩니다.")
+c[5].metric("최대낙폭 (MDD)", f"-{mdd * 100:.2f}%",
+            help="보유 기간 중 평가금액 고점 대비 최대 하락폭입니다. 적립식 매수·분배금 재투자도 반영됩니다.")
 
 # --- 연도별 분배금 (월 단위 시뮬레이션 결과 집계) ---
 records_df = pd.DataFrame(sim["monthly_records"])
@@ -670,7 +785,7 @@ if benchmark_code:
         cmp_df.index.name = "날짜"
         cmp_long = cmp_df.reset_index().melt(id_vars="날짜", var_name="구분", value_name="지수 (시작=100)")
         fig_cmp = px.line(cmp_long, x="날짜", y="지수 (시작=100)", color="구분")
-        fig_cmp.update_layout(margin=dict(t=30, b=20))
+        fig_cmp.update_layout(margin=dict(t=20, b=20), height=280, font=dict(size=11))
         st.plotly_chart(fig_cmp, use_container_width=True)
 
         etf_price_return = (float(df["Close"].iloc[-1]) / float(df["Close"].iloc[0]) - 1) * 100

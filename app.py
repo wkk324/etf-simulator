@@ -162,24 +162,25 @@ def health_insurance_annual(financial_income, other_income, insurance_type):
 
 @st.cache_data(ttl=3600)
 def get_etf_data(sort_by):
-    recommended = [
+    recommended_fallback = [
         ("ACE 미국배당다우존스 (402970)", "402970"),
         ("KODEX 200 (069500)", "069500"),
         ("KODEX 200타겟위클리커버드콜 (498400)", "498400"),
         ("TIGER 미국나스닥100 (133690)", "133690"),
         ("TIGER 미국배당+7%프리미엄다우존스 (459580)", "459580"),
     ]
-    others, error = [], None
+    error = None
     try:
         df = fdr.StockListing("ETF/KR")
-        if not df.empty:
-            df["Symbol"] = df["Symbol"].astype(str).str.zfill(6)
-            df = df[~df["Symbol"].isin({c for _, c in recommended})]
-            df = df.sort_values(by="Name" if sort_by == "가나다 이름순" else "Symbol")
-            others = [(f"{r['Name']} ({r['Symbol']})", str(r["Symbol"])) for _, r in df.iterrows()]
+        if df.empty:
+            raise ValueError("빈 목록이 반환되었습니다.")
+        df["Symbol"] = df["Symbol"].astype(str).str.zfill(6)
+        df = df.sort_values(by="Name" if sort_by == "가나다 이름순" else "Symbol")
+        items = [(f"{r['Name']} ({r['Symbol']})", str(r["Symbol"])) for _, r in df.iterrows()]
     except Exception as e:
         error = str(e)
-    return {label: code for label, code in recommended + others}, error
+        items = recommended_fallback
+    return {label: code for label, code in items}, error
 
 
 @st.cache_data(ttl=3600)

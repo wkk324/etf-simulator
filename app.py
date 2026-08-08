@@ -8,7 +8,7 @@
 - 국내상장 ETF 과표증분 기준 과세 반영 (분배금 / 매매차익)
 """
 
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 import math
 
 import FinanceDataReader as fdr
@@ -17,7 +17,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-st.set_page_config(page_title="한국 ETF 분배금·세금 시뮬레이터", layout="wide")
+st.set_page_config(page_title="ETF 분배금·세금 시뮬레이터", layout="wide")
 
 # =========================================================
 # 상수 (2026년 기준)
@@ -44,6 +44,13 @@ NHIS_REGION_FIN_THRESHOLD = 10_000_000
 NHIS_WORKER_THRESHOLD = 20_000_000
 
 PERIOD_DAYS = {"1년": 365, "3년": 365 * 3, "5년": 365 * 5, "10년": 365 * 10}
+
+BENCHMARK_OPTIONS = {
+    "없음": None,
+    "KOSPI 200 (069500)": "069500",
+    "KOSPI 지수": "KS11",
+    "코스닥 지수": "KQ11",
+}
 
 # (연 분배율, 분배금 과표 반영률) 참고값 — 사이드바에서 수정 가능
 # 과표 반영률: 분배금 중 실제로 과세되는 비율 (과표증분 / 분배금)
@@ -97,6 +104,26 @@ def progressive_tax(tax_base: float) -> float:
     for limit, rate, deduction in TAX_BRACKETS:
         if tax_base <= limit:
             return max(0.0, tax_base * rate - deduction)
+    return 0.0
+
+
+EARNED_INCOME_DEDUCTION_BRACKETS = [
+    (5_000_000, 0.70, 0),
+    (15_000_000, 0.40, 3_500_000),
+    (45_000_000, 0.15, 7_500_000),
+    (100_000_000, 0.05, 12_000_000),
+    (float("inf"), 0.02, 14_750_000),
+]
+
+
+def earned_income_deduction(gross_salary: float) -> float:
+    """총급여액에 대한 근로소득공제액 (공제 한도 2,000만원)."""
+    gross_salary = max(0.0, gross_salary)
+    prev_limit = 0
+    for limit, rate, base_deduction in EARNED_INCOME_DEDUCTION_BRACKETS:
+        if gross_salary <= limit:
+            return min(base_deduction + (gross_salary - prev_limit) * rate, 20_000_000)
+        prev_limit = limit
     return 0.0
 
 
@@ -185,6 +212,97 @@ def guess_etf_type(label: str, code: str):
 
 
 # =========================================================
+# 시뮬레이션 엔진 (거치식/적립식 · 분배금 재투자 · MDD)
+# =========================================================
+
+def build_anchors(df: pd.DataFrame):
+    """월말 기준 매수/분배 이벤트 날짜(anchor)를 만든다. 첫 anchor=매수일, 마지막=매도일(월말이 아니면 stub)."""
+    if df.empty:
+        return [], set()
+    first, last = df.index.min(), df.index.max()
+    month_ends = [g.index.max() for _, g in df.groupby(pd.Grouper(freq="ME")) if not g.empty]
+    month_ends = sorted(d for d in month_ends if first < d <= last)
+    # last 날짜가 그 달의 실제 월말 근처(휴장일 포함 최근 3일 이내)가 아니라면,
+    # 아직 끝나지 않은 달의 데이터일 뿐이므로 정기 매수 스케줄에서 제외하고 stub으로만 처리한다.
+    if month_ends and month_ends[-1] == last and last.day < last.days_in_month - 3:
+        month_ends.pop()
+    scheduled = [first] + month_ends
+    anchors = list(scheduled)
+    if anchors[-1] < last:
+        anchors.append(last)
+    return anchors, set(scheduled)
+
+
+def run_simulation(df: pd.DataFrame, invest_mode, lumpsum_amount, monthly_amount,
+                   is_adjusted_price, div_rate, monthly_dps, reinvest):
+    """월 단위 근사로 매수(거치식/적립식)·분배금·재투자를 시뮬레이션한다."""
+    anchors, scheduled = build_anchors(df)
+
+    quantity = 0.0
+    cash_balance = 0.0
+    total_cash_contributed = 0.0
+    total_dividend_gross = 0.0
+    monthly_records = []
+    anchor_quantities = []
+    prev_anchor = anchors[0]
+
+    for i, anchor in enumerate(anchors):
+        price = float(df.loc[anchor, "Close"])
+        dividend = 0.0
+
+        if i > 0:
+            period_days = (anchor - prev_anchor).days
+            if not is_adjusted_price:
+                if monthly_dps is not None:
+                    dividend = quantity * monthly_dps * (period_days / 30.44)
+                else:
+                    dividend = quantity * price * div_rate * (period_days / 365.0)
+            total_dividend_gross += dividend
+            monthly_records.append({
+                "연도": anchor.year, "보유일수": period_days,
+                "주가": price, "분배금(세전)": dividend,
+            })
+
+        contribution = 0.0
+        if anchor in scheduled:
+            if i == 0:
+                contribution = lumpsum_amount if invest_mode == "거치식" else monthly_amount
+            elif invest_mode == "적립식":
+                contribution = monthly_amount
+        total_cash_contributed += contribution
+
+        cash_balance += contribution + (dividend if reinvest else 0.0)
+        new_shares = math.floor(cash_balance / price) if price > 0 else 0
+        quantity += new_shares
+        cash_balance -= new_shares * price
+
+        anchor_quantities.append((anchor, quantity))
+        prev_anchor = anchor
+
+    shares_series = pd.Series({a: q for a, q in anchor_quantities}).reindex(df.index, method="ffill").fillna(0.0)
+    value_series = shares_series * df["Close"]
+    running_max = value_series.cummax()
+    drawdown = (value_series - running_max) / running_max.where(running_max > 0)
+    mdd = abs(float(drawdown.min())) if not drawdown.empty and drawdown.notna().any() else 0.0
+
+    sell_price = float(df["Close"].iloc[-1])
+    total_eval = quantity * sell_price + cash_balance
+    capital_gain = total_eval - total_cash_contributed - (total_dividend_gross if reinvest else 0.0)
+
+    return {
+        "quantity": quantity,
+        "sell_price": sell_price,
+        "total_cash_contributed": total_cash_contributed,
+        "leftover_cash": cash_balance,
+        "total_eval": total_eval,
+        "capital_gain": capital_gain,
+        "total_dividend_gross": total_dividend_gross,
+        "monthly_records": monthly_records,
+        "mdd": mdd,
+    }
+
+
+# =========================================================
 # 사이드바
 # =========================================================
 
@@ -253,46 +371,81 @@ div_taxable_ratio = st.sidebar.slider(
          "커버드콜 ETF의 옵션 프리미엄은 과표에 잡히지 않는 경우가 많아 과표증분이 0에 가깝습니다. "
          "운용사 분배금 공지의 '주당 과세표준액 증분'을 확인해 입력하세요.") / 100
 
-# --- 투자금 ---
+# --- 투자 방식 ---
 st.sidebar.divider()
-inv_map = {"1억": 100_000_000, "3억": 300_000_000, "5억": 500_000_000, "10억": 1_000_000_000}
-inv_choice = st.sidebar.radio("투자금", list(inv_map.keys()) + ["기타"], index=0, horizontal=True)
-if inv_choice == "기타":
-    investment_amount = st.sidebar.number_input(
-        "직접 입력 (원)", min_value=10_000, value=50_000_000, step=1_000_000, format="%d")
+st.sidebar.markdown("**💰 투자 방식**")
+invest_mode_label = st.sidebar.radio("투자 방식", ["거치식 (일시불)", "적립식 (매월 정액)"],
+                                     index=0, horizontal=True)
+invest_mode = "거치식" if invest_mode_label.startswith("거치식") else "적립식"
+
+if invest_mode == "거치식":
+    inv_map = {"1억": 100_000_000, "3억": 300_000_000, "5억": 500_000_000, "10억": 1_000_000_000}
+    inv_choice = st.sidebar.radio("투자금", list(inv_map.keys()) + ["기타"], index=0, horizontal=True)
+    if inv_choice == "기타":
+        lumpsum_amount = st.sidebar.number_input(
+            "직접 입력 (원)", min_value=10_000, value=50_000_000, step=1_000_000, format="%d")
+    else:
+        lumpsum_amount = inv_map[inv_choice]
+    monthly_amount = 0.0
 else:
-    investment_amount = inv_map[inv_choice]
+    monthly_map = {"50만원": 500_000, "100만원": 1_000_000, "200만원": 2_000_000, "300만원": 3_000_000}
+    monthly_choice = st.sidebar.radio("매월 투자금액", list(monthly_map.keys()) + ["기타"],
+                                      index=1, horizontal=True)
+    if monthly_choice == "기타":
+        monthly_amount = st.sidebar.number_input(
+            "직접 입력 (원/월)", min_value=10_000, value=1_000_000, step=100_000, format="%d")
+    else:
+        monthly_amount = monthly_map[monthly_choice]
+    lumpsum_amount = 0.0
+
+reinvest_dividends = st.sidebar.checkbox(
+    "분배금 재투자 (복리)", value=False,
+    help="체크 시 분배금을 현금으로 받는 대신 매월 말 같은 ETF를 추가 매수합니다(월 단위 근사). "
+         "세금은 재투자 여부와 무관하게 분배 시점마다 부과됩니다.")
 
 # --- 차트/기간 ---
+st.sidebar.divider()
 chart_type = st.sidebar.radio("차트 종류", ["선 차트 (Line)", "캔들 차트 (Candle)"],
                               index=0, horizontal=True)
-period_mode = st.sidebar.radio("기간 선택 방식",
-                               ["기간 범위 자유 선택", "고정 기간 이동 (슬라이더)", "직접 날짜 지정"],
-                               index=0)
-if period_mode == "직접 날짜 지정":
-    period_option = "직접지정"
-elif period_mode == "고정 기간 이동 (슬라이더)":
-    period_option = "고정기간이동"
-    fixed_label = st.sidebar.selectbox("고정 기간", list(PERIOD_DAYS.keys()), index=1)
-else:
-    period_option = st.sidebar.radio("기본 기간", list(PERIOD_DAYS.keys()) + ["전체"],
-                                     index=1, horizontal=True)
+fixed_label = st.sidebar.radio("보유 기간", list(PERIOD_DAYS.keys()), index=0, horizontal=True)
+
+benchmark_choice = st.sidebar.selectbox("벤치마크 비교", list(BENCHMARK_OPTIONS.keys()), index=0)
+benchmark_code = BENCHMARK_OPTIONS[benchmark_choice]
 
 # --- 세금 조건 ---
 st.sidebar.divider()
 st.sidebar.markdown("**💸 세금·건강보험 조건 (연간)**")
-
-insurance_type = st.sidebar.radio("건강보험 가입 유형", ["지역가입자", "직장가입자"],
-                                  index=0, horizontal=True)
 
 fin_map = {"없음": 0, "1천만": 10_000_000, "2천만": 20_000_000,
            "3천만": 30_000_000, "5천만": 50_000_000, "1억": 100_000_000}
 other_fin_income = fin_map[st.sidebar.select_slider(
     "기타 금융소득 (이자·배당)", options=list(fin_map.keys()), value="없음")]
 
-other_comp_income = st.sidebar.number_input(
-    "기타 종합소득금액 (근로·사업 등)", value=0, step=1_000_000, format="%d",
-    help="세율 구간 판정용. 근로소득은 근로소득공제 후 '소득금액' 기준입니다.")
+gross_salary = st.sidebar.number_input(
+    "총급여액 (근로소득, 연)", value=0, step=1_000_000, format="%d",
+    help="세전 연봉(비과세 제외). 근로소득공제를 자동 적용해 소득금액으로 환산한 뒤 세율 구간 판정에 반영합니다. "
+         "재직 중이 아니면 0으로 두세요.")
+salary_income_amount = max(0.0, gross_salary - earned_income_deduction(gross_salary))
+if gross_salary > 0:
+    st.sidebar.caption(f"→ 근로소득공제 {earned_income_deduction(gross_salary):,.0f}원 적용, "
+                       f"근로소득금액 {salary_income_amount:,.0f}원")
+
+auto_insurance = st.sidebar.checkbox(
+    "건강보험 가입 유형 자동 판정", value=True,
+    help="근로소득이 있으면 직장가입자(회사가 자동 가입), 없으면(자영업·프리랜서·퇴사 등) "
+         "지역가입자로 자동 설정합니다. 주 15시간 미만 단시간 근로 등 예외가 있다면 체크 해제 후 직접 선택하세요.")
+if auto_insurance:
+    insurance_type = "직장가입자" if gross_salary > 0 else "지역가입자"
+    st.sidebar.caption(f"→ **{insurance_type}**로 자동 설정됨")
+else:
+    insurance_type = st.sidebar.radio("건강보험 가입 유형", ["지역가입자", "직장가입자"],
+                                      index=0, horizontal=True)
+
+other_business_income = st.sidebar.number_input(
+    "기타 종합소득금액 (사업소득 등)", value=0, step=1_000_000, format="%d",
+    help="근로소득을 제외한 사업소득 등의 소득금액(필요경비 차감 후) 합계.")
+
+other_comp_income = salary_income_amount + other_business_income
 
 income_deduction = st.sidebar.number_input(
     "소득공제 합계", value=1_500_000, step=500_000, format="%d",
@@ -308,7 +461,7 @@ gain_taxable_ratio = st.sidebar.slider(
 # 메인
 # =========================================================
 
-st.title("🏦 한국 ETF 분배금·세금 시뮬레이터")
+st.title("🏦 ETF 분배금·세금 시뮬레이터")
 st.caption("과거 주가 데이터 기반으로 매매차익·분배금·세금·건강보험료를 함께 정산합니다.")
 
 df_all = get_price_history(ticker)
@@ -318,31 +471,22 @@ if df_all.empty:
 
 earliest, latest = df_all.index.min().date(), df_all.index.max().date()
 
-if period_option == "직접지정":
-    c1, c2 = st.columns(2)
-    start_date = c1.date_input("매수일", value=max(earliest, latest - timedelta(days=365 * 3)),
-                               min_value=earliest, max_value=latest)
-    end_date = c2.date_input("매도일", value=latest, min_value=earliest, max_value=latest)
-elif period_option == "전체":
+dur = PERIOD_DAYS[fixed_label]
+max_start = max(earliest, latest - timedelta(days=dur))
+if max_start <= earliest:
+    st.warning(f"상장 기간이 {fixed_label}보다 짧아 전체 구간을 사용합니다.")
     start_date, end_date = earliest, latest
-elif period_option == "고정기간이동":
-    dur = PERIOD_DAYS[fixed_label]
-    max_start = max(earliest, latest - timedelta(days=dur))
-    if max_start <= earliest:
-        st.warning(f"상장 기간이 {fixed_label}보다 짧아 전체 구간을 사용합니다.")
-        start_date, end_date = earliest, latest
-    else:
-        start_date = st.slider(f"📅 {fixed_label} 기간 이동", min_value=earliest,
-                               max_value=max_start, value=max_start, format="YYYY-MM-DD")
-        end_date = min(start_date + timedelta(days=dur), latest)
 else:
-    dur = timedelta(days=PERIOD_DAYS[period_option])
-    if earliest >= latest:
-        start_date, end_date = earliest, latest
-    else:
-        start_date, end_date = st.slider(
-            "📅 매수·매도 시점 선택", min_value=earliest, max_value=latest,
-            value=(max(earliest, latest - dur), latest), format="YYYY-MM-DD")
+    start_date = st.slider(f"📅 {fixed_label} 기간 이동 (전체 구간: {earliest} ~ {latest})",
+                           min_value=earliest, max_value=max_start, value=max_start,
+                           format="YYYY-MM-DD")
+    end_date = min(start_date + timedelta(days=dur), latest)
+
+    dc1, dc2 = st.columns(2)
+    start_date = dc1.date_input("매수일 직접 입력", value=start_date,
+                                min_value=earliest, max_value=latest)
+    end_date = dc2.date_input("매도일 직접 입력", value=end_date,
+                              min_value=earliest, max_value=latest)
 
 if start_date >= end_date:
     st.error("매도일은 매수일보다 뒤여야 합니다.")
@@ -379,56 +523,57 @@ fig.update_layout(xaxis=dict(range=[earliest, latest], tickformat="%Y-%m-%d"),
 st.plotly_chart(fig, use_container_width=True,
                 config={"scrollZoom": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]})
 
-# --- 매매 결과 ---
+# --- 매매 결과 (시뮬레이션 실행) ---
 mask = (df_all.index >= pd.Timestamp(start_date)) & (df_all.index <= pd.Timestamp(end_date))
 df = df_all.loc[mask]
 if df.empty:
     st.error("선택한 기간에 거래 데이터가 없습니다.")
     st.stop()
 
+sim = run_simulation(df, invest_mode, lumpsum_amount, monthly_amount,
+                     is_adjusted_price, div_rate, monthly_dps, reinvest_dividends)
+
 buy_price = float(df.iloc[0]["Close"])
-sell_price = float(df.iloc[-1]["Close"])
-quantity = math.floor(investment_amount / buy_price)
+sell_price = sim["sell_price"]
+quantity = sim["quantity"]
 if quantity == 0:
-    st.error("투자금이 1주 가격보다 적습니다.")
+    st.error("투자금이 1주 가격보다 적어 매수할 수 없습니다.")
     st.stop()
 
-actual_invested = quantity * buy_price
-total_eval = quantity * sell_price + (investment_amount - actual_invested)
-capital_gain = quantity * (sell_price - buy_price)
+total_cash_contributed = sim["total_cash_contributed"]
+total_eval = sim["total_eval"]
+capital_gain = sim["capital_gain"]
+total_dividend = sim["total_dividend_gross"]
+mdd = sim["mdd"]
 
 st.subheader(f"📌 {selected_label} 시뮬레이션 결과")
+badge_line = invest_mode_label + (" · 🔁 분배금 재투자" if reinvest_dividends else "")
+st.caption(badge_line)
+
 c = st.columns(5)
-c[0].metric("주식 수", f"{quantity:,} 주")
-c[1].metric("매수 주가", f"{buy_price:,.0f} 원")
+c[0].metric("최종 보유 주식 수", f"{quantity:,.0f} 주")
+c[1].metric("매수 주가 (최초)", f"{buy_price:,.0f} 원")
 c[2].metric("매도 주가", f"{sell_price:,.0f} 원",
-            delta=f"{sell_price - buy_price:,.0f} 원 ({(sell_price - buy_price) / buy_price * 100:.2f}%)")
-c[3].metric("매수 평가금액", f"{actual_invested:,.0f} 원")
-c[4].metric("매도 평가금액", f"{total_eval:,.0f} 원",
-            delta=f"{capital_gain:,.0f} 원 ({capital_gain / investment_amount * 100:.2f}%)")
+            delta=f"{(sell_price - buy_price) / buy_price * 100:.2f}%")
+c[3].metric("누적 투자원금", f"{total_cash_contributed:,.0f} 원")
+gain_pct = (total_eval - total_cash_contributed) / total_cash_contributed * 100 if total_cash_contributed else 0.0
+c[4].metric("최종 평가금액", f"{total_eval:,.0f} 원",
+            delta=f"{total_eval - total_cash_contributed:,.0f} 원 ({gain_pct:.2f}%)")
 
-# --- 연도별 분배금 ---
+st.metric("최대낙폭 (MDD)", f"-{mdd * 100:.2f}%",
+          help="보유 기간 중 평가금액 고점 대비 최대 하락폭입니다. 적립식 매수·분배금 재투자도 반영됩니다.")
+
+# --- 연도별 분배금 (월 단위 시뮬레이션 결과 집계) ---
+records_df = pd.DataFrame(sim["monthly_records"])
 yearly = []
-for year in range(start_date.year, end_date.year + 1):
-    y_start = max(start_date, date(year, 1, 1))
-    y_end = min(end_date, date(year, 12, 31))
-    days = (y_end - y_start).days
-    if days <= 0:
-        continue
-    ymask = (df.index >= pd.Timestamp(y_start)) & (df.index <= pd.Timestamp(y_end))
-    avg_price = float(df.loc[ymask, "Close"].mean()) if ymask.any() else buy_price
-
-    if is_adjusted_price:
-        dividend = 0.0
-    elif monthly_dps is not None:
-        dividend = quantity * monthly_dps * (days / 30.44)
-    else:
-        dividend = quantity * avg_price * div_rate * (days / 365.0)
-
-    yearly.append({"연도": year, "보유일수": days, "평균주가": avg_price,
-                   "분배금(세전)": dividend})
-
-total_dividend = sum(y["분배금(세전)"] for y in yearly)
+if not records_df.empty:
+    for year, g in records_df.groupby("연도"):
+        yearly.append({
+            "연도": int(year),
+            "보유일수": int(g["보유일수"].sum()),
+            "평균주가": float(g["주가"].mean()),
+            "분배금(세전)": float(g["분배금(세전)"].sum()),
+        })
 
 # --- 과세 대상액 ---
 taxable_gain = 0.0 if is_domestic_equity else max(0.0, capital_gain) * gain_taxable_ratio
@@ -495,16 +640,45 @@ st.divider()
 st.subheader("💰 최종 총수익 (세후)")
 
 net_profit = capital_gain + total_dividend - total_tax - total_nhis
-cagr = ((investment_amount + net_profit) / investment_amount) ** (1 / holding_years) - 1 \
-    if holding_years > 0 else 0
+cagr = ((total_cash_contributed + net_profit) / total_cash_contributed) ** (1 / holding_years) - 1 \
+    if holding_years > 0 and total_cash_contributed > 0 else 0
 
 s = st.columns(5)
-s[0].metric("매매차익", f"{capital_gain:,.0f} 원")
+s[0].metric("매매차익", f"{capital_gain:,.0f} 원",
+            help="가격 상승분만 반영한 순수 매매차익입니다. 재투자된 분배금 원금은 제외됩니다.")
 s[1].metric("분배금 (세전)", f"{total_dividend:,.0f} 원")
 s[2].metric("세금·건보료", f"-{total_tax + total_nhis:,.0f} 원")
 s[3].metric("최종 총수익 (세후)", f"{net_profit:,.0f} 원",
-            delta=f"{net_profit / investment_amount * 100:.2f}%")
-s[4].metric("세후 CAGR", f"{cagr * 100:.2f}%")
+            delta=f"{net_profit / total_cash_contributed * 100:.2f}%" if total_cash_contributed else None)
+s[4].metric("세후 CAGR", f"{cagr * 100:.2f}%",
+            help="적립식의 경우 현금흐름 가중 수익률(IRR)이 아닌 근사 연환산 수익률입니다.")
+
+# --- 벤치마크 비교 ---
+if benchmark_code:
+    st.divider()
+    st.subheader("📊 벤치마크 비교")
+    bench_df_all = get_price_history(benchmark_code)
+    bench_mask = (bench_df_all.index >= pd.Timestamp(start_date)) & (bench_df_all.index <= pd.Timestamp(end_date))
+    bench_df = bench_df_all.loc[bench_mask]
+    if bench_df.empty:
+        st.warning("벤치마크 데이터를 불러오지 못했습니다.")
+    else:
+        etf_norm = df["Close"] / df["Close"].iloc[0] * 100
+        bench_norm = bench_df["Close"] / bench_df["Close"].iloc[0] * 100
+        cmp_df = pd.DataFrame({selected_label: etf_norm, benchmark_choice: bench_norm})
+        cmp_df.index.name = "날짜"
+        cmp_long = cmp_df.reset_index().melt(id_vars="날짜", var_name="구분", value_name="지수 (시작=100)")
+        fig_cmp = px.line(cmp_long, x="날짜", y="지수 (시작=100)", color="구분")
+        fig_cmp.update_layout(margin=dict(t=30, b=20))
+        st.plotly_chart(fig_cmp, use_container_width=True)
+
+        etf_price_return = (float(df["Close"].iloc[-1]) / float(df["Close"].iloc[0]) - 1) * 100
+        bench_return = (float(bench_df["Close"].iloc[-1]) / float(bench_df["Close"].iloc[0]) - 1) * 100
+        bc = st.columns(2)
+        bc[0].metric(f"{selected_label} 가격 수익률", f"{etf_price_return:.2f}%",
+                    help="세금·분배금 재투자를 제외한 순수 가격 등락률입니다.")
+        bc[1].metric(f"{benchmark_choice} 가격 수익률", f"{bench_return:.2f}%",
+                    delta=f"{etf_price_return - bench_return:+.2f}%p (ETF 기준 초과분)")
 
 with st.expander("📖 계산 기준 및 한계"):
     st.markdown("""
@@ -520,6 +694,13 @@ with st.expander("📖 계산 기준 및 한계"):
 국내상장 ETF의 분배금과 매매차익은 실제 금액이 아니라 **'과세표준 기준가격 증가분'과 실제 금액 중 작은 값**에 15.4%가 과세됩니다.
 커버드콜 ETF의 옵션 프리미엄은 과표에 반영되지 않는 경우가 많아, 분배금을 많이 받아도 세금이 거의 없을 수 있습니다.
 정확한 값은 운용사(KODEX/TIGER/ACE 등) 홈페이지의 월별 분배금 공지에서 **'주당 과세표준액'**을 확인해 사이드바에 입력하세요.
+
+**적립식 · 재투자 · MDD 시뮬레이션**
+- 매수(적립식)·분배·재투자는 실제 지급일이 아니라 **매월 말 영업일**에 일괄 발생한다고 근사합니다.
+- 재투자·적립식 매수는 소수점 주식을 지원하지 않는 국내 ETF 특성을 반영해 **정수 주 단위**로만 매수하고, 남는 금액은 다음 달로 이월됩니다.
+- MDD(최대낙폭)는 일별 종가 기준 평가금액(보유 주식 수 × 종가)의 고점 대비 최대 하락폭입니다.
+- 적립식의 CAGR은 투자 시점이 분산되어 있어 실제 IRR(현금흐름 가중 수익률)과 다를 수 있는 근사치입니다.
+- 벤치마크 비교는 가격 등락률만 비교하며 세금·분배금·수수료는 반영하지 않습니다.
 
 **한계**
 - 분배금은 실제 지급 내역이 아니라 입력한 분배율 또는 월 주당 분배금으로 추정합니다.
